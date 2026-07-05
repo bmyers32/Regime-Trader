@@ -11,33 +11,203 @@ defaults:
   history_years: 2        # one-time historical fetch depth (warm-store, not live loop)
   live_warmup_candles: 750  # gap-fetch size on bot restart (H1≈31d, H4≈125d)
 
+  # Regime classifier parameters (Phase 3).
+  # All thresholds require empirical pass-rate confirmation in Phase 4 (TRADING-RULES §1.7).
+  # Per-pair overrides go under each instrument's regime_calibration block.
+  regime_params:
+    adx_period: 14
+    adx_trend_min: 25.0          # ADX > this AND alignment AND slope → TRENDING candidate
+    adx_range_max: 20.0          # ADX < this → RANGING candidate
+    adx_exhaustion: 50.0         # ADX > this → trend exhaustion; trend playbook takes no new entries
+    slope_persist_bars: 3        # EMA20 diffs must all be same sign for N consecutive bars
+    atr_expansion_ratio: 1.25   # ATR(10)/ATR(50) > this → EXPANSION candidate
+    atr_expansion_mean_mult: 1.3 # ATR(14) > this × 60-bar mean → EXPANSION candidate
+    bb_period: 20
+    bb_std: 2.0
+    bb_compression_pct: 20       # BB width < own rolling Nth percentile → COMPRESSION
+    bb_compression_window: 100   # rolling window bars for percentile calculation
+    regime_confirm_bars: 2       # consecutive anchor candles to confirm a regime switch (§2 law)
+    regime_min_hold_bars: 4      # min bars in regime before exit allowed (bypassed for EXPANSION entry)
+
 instruments:
   GBP_JPY:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+      Watch: GBP/JPY is a high-pip-value pair; ATR-based thresholds may differ from lower-pip pairs.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+        note: default from §2; validate on 2yr H4 data
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+        note: check if 3-bar slope too strict given GBP/JPY volatility
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest
 
   EUR_USD:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+      EUR/USD has tighter spreads; expansion threshold may be conservative relative to pair ATR profile.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest
 
   USD_JPY:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+      USD/JPY correlates with GBP/JPY (shared JPY leg) — currency-level exposure caps apply.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest
 
   GBP_USD:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest
 
   AUD_USD:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+      AUD/USD may exhibit stronger Asian-session ranging; validate session-split regime frequency.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest
 
   EUR_GBP:
     enabled: false
     calibrated: false
-    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+    calibration_note: >
+      Phase 3 regime classifier built. Empirical pass-rates pending Phase 4 backtest analysis.
+      EUR/GBP is known for compression/squeeze patterns around BoE/ECB events; pay attention to
+      bb_compression_pct pass-rate and expansion threshold on event days.
+    regime_calibration:
+      adx_trend_min:
+        value: 25.0
+        pass_rate: pending_phase4_backtest
+      adx_range_max:
+        value: 20.0
+        pass_rate: pending_phase4_backtest
+      slope_persist_bars:
+        value: 3
+        pass_rate: pending_phase4_backtest
+      atr_expansion_ratio:
+        value: 1.25
+        pass_rate: pending_phase4_backtest
+        note: may steal candles from TRENDING in strong trends — verify overlap rate
+      atr_expansion_mean_mult:
+        value: 1.3
+        pass_rate: pending_phase4_backtest
+      bb_compression_pct:
+        value: 20
+        pass_rate: pending_phase4_backtest
+      bb_compression_window:
+        value: 100
+        pass_rate: pending_phase4_backtest

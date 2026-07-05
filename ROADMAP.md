@@ -25,3 +25,9 @@ Future work + ideas outside current phase scope. Phase status lives in CLAUDE.md
 **Idea:** One CLI command running the full §5 chain (backtest → WFO → stability sweep → per-regime attribution) emitting a single validation-report artifact the Phase 11 gate consumes.
 **Reasoning:** Gates are only as strong as their friction is low; one-command revalidation actually gets run after every tweak.
 **Why deferred:** Needs Phases 4–5. Build immediately after — before playbooks 2–3 so they're validated with it from birth.
+
+### Compression-within-trend signal flag
+**Idea:** When TRENDING regime fires and BB width is simultaneously below its rolling percentile, pass a `compression_flag=True` into the SignalLog indicator_snapshot. The trend_pullback strategy can optionally tighten its score threshold when the flag is set, favouring only the highest-confidence pullback entries.
+**Reasoning:** During Phase 3, the classifier priority debate revealed that TRENDING and COMPRESSION can be simultaneously true — the classifier resolves the conflict by picking TRENDING, but the compression state carries information. A pullback within a compressed trend tends to resolve sharply in the trend direction, making it a potentially tighter entry.
+**Design questions:** Flag belongs in indicator_snapshot (no schema change) or as a dedicated SignalLog column? Does tighter score threshold need its own walk-forward arm, or does it fall out of the existing one? What is the Phase 4 hit rate of simultaneous TRENDING + sub-P20 BB?
+**Why deferred:** No strategy code until Phase 5. Phase 4 pass-rates will first reveal how often the overlap occurs per pair; if rare (<5% of TRENDING bars), the signal adds noise not signal.
