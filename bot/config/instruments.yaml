@@ -8,6 +8,8 @@ defaults:
   timeframe_ltf: H1       # execution TF for entries
   risk_pct: 0.5           # % of equity risked per trade
   max_positions: 1        # per instrument
+  history_years: 2        # one-time historical fetch depth (warm-store, not live loop)
+  live_warmup_candles: 750  # gap-fetch size on bot restart (H1≈31d, H4≈125d)
 
 instruments:
   GBP_JPY:

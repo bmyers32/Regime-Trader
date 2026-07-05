@@ -31,3 +31,18 @@ Every seed must pass four invariants — fail one, it's not a seed:
 ---
 
 ## Wisdom
+
+### Type the boundary, not the computation.
+*Phase 2 — format_price() → str, not float*
+Computation works in floats for precision. Transmission works in strings for exactness.
+Converting at the seam (format_price returns `f"{price:.{dp}f}"`) prevents floating-point
+noise (`1.10000000000002`) from crossing into OANDA payloads and causing silent rejections.
+Ignoring it → specific, visible failure: order rejected, position never opened, no error log.
+Applies anywhere internal precision meets an external wire format: DB writes, CLI args, API calls.
+
+### Three paths: startup, restart, cycle — never collapse them.
+*Phase 2 — fetch_history() / warm_up() / get_candles() split*
+One-time historical fill (startup), gap-fill on restart, and per-cycle incremental fetch have
+different cost, frequency, and failure modes. Collapsing them → full historical fetch every cycle
+(§1.12 violation), or stale data on restart, or blocking the live loop with minutes of API calls.
+Each function is a different contract; sharing implementation is fine, sharing call sites is not.
