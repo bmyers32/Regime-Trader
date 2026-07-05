@@ -83,7 +83,7 @@ All routes require login (credentials from .env; Flask-Login or HTTP Basic — p
 ## Phases
 | # | Scope | Status |
 |---|---|---|
-| 1 | Scaffold: repo, config loader, .env, pinned deps, journal models incl. InstrumentControl, migration init, WAL | [ ] |
+| 1 | Scaffold: repo, config loader, .env, pinned deps, journal models incl. InstrumentControl, migration init, WAL | [x] |
 | 2 | Data layer: complete-candle fetch, cache, incremental update, precision registry | [ ] |
 | 3 | Indicators + regime classifier w/ hysteresis, per-pair calibration notes | [ ] |
 | 4 | Backtester: event-driven, spread/slippage/rollover, golden-run tests | [ ] |
