@@ -31,6 +31,8 @@ Anchor (higher) TF classifies; strategies execute on lower TF.
 
 Hysteresis mandatory: 2 consecutive closed anchor candles to switch; min hold M bars; regime+bars journaled every cycle. ADX 25–40 tradeable; >50 possible exhaustion → trend playbook takes no NEW entries.
 
+**Timeframe selection law:** anchor:execution ratio 4–6:1. The TF pair is per-instrument, per-playbook config (§1.8) — never assumed. Candidates (default 4H/1H and 1H/15M) are validated as competing configurations through §5; winner = best net-of-cost OOS expectancy subject to a minimum trade count (a thin sample cannot win by luck). Expected biases to verify, not assume: higher TF → better spread-to-ATR efficiency + regime stability (suits trend_pullback, squeeze_breakout); lower TF → more trades, faster statistical significance, intraday session ranges (may suit range_reversion if middle-band targets clear ATR:spread ≥ 4:1).
+
 ## §3 Playbooks
 
 ### 3.1 trend_pullback (TRENDING only)

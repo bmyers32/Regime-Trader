@@ -1,0 +1,41 @@
+# Instrument configuration — tuning lives here, never in code.
+# displayPrecision fetched from OANDA at startup (Phase 2); not hardcoded here.
+# All thresholds in ATR multiples or rolling percentiles — raw price-percent banned (TRADING-RULES §1.2).
+# Per-pair calibration required before enabling (TRADING-RULES §4.9).
+
+defaults:
+  timeframe_htf: H4       # anchor TF for regime classification
+  timeframe_ltf: H1       # execution TF for entries
+  risk_pct: 0.5           # % of equity risked per trade
+  max_positions: 1        # per instrument
+
+instruments:
+  GBP_JPY:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+
+  EUR_USD:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+
+  USD_JPY:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+
+  GBP_USD:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+
+  AUD_USD:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
+
+  EUR_GBP:
+    enabled: false
+    calibrated: false
+    calibration_note: "Phase 1 scaffold — calibration pending Phase 3"
