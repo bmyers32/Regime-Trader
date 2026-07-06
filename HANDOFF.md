@@ -1,36 +1,90 @@
-# HANDOFF — 2026-07-05T00:00Z
-Phase: 4 — Backtester   Status: NOT-STARTED
+# HANDOFF — 2026-07-06T00:00Z
+Phase: 4 — Backtester   Status: COMPLETE
 
-Done this session: Phase 3 COMPLETE. 65/65 tests pass. All §4 exit criteria met.
-  Deliverables: bot/indicators/core.py (ema/true_range/atr-Wilder/adx-Wilder/bollinger_bands/bb_width),
-  bot/regime/classifier.py (RegimeState, RegimeResult, RegimeClassifier with asymmetric EXPANSION
-  hysteresis, slope persistence, alignment hard gate), instruments.yaml regime_params + 6-pair
-  calibration stubs, tests/test_indicators.py + tests/test_regime.py.
+Done this session: Phase 4 COMPLETE. 99/99 tests pass (65 prior + 34 new). All §4 exit
+criteria met and adversarially tested:
+  - Golden-run locked: fixed synthetic data produces byte-identical metrics and trade
+    lists across repeat runs (test_golden_run_locked_on_repeat).
+  - Costs demonstrably reduce PnL vs an identical zero-cost run
+    (test_costs_reduce_pnl_vs_zero_cost).
+  - Same Strategy interface as live path: engine drives bot.strategies.base.Strategy
+    (generate_signal(window, regime) -> Signal|None) with no engine-specific hooks —
+    this IS the contract Phase 5's trend_pullback will implement, not a stand-in.
+  - No repainting: signal from bar i fills at bar i+1's open, verified structurally
+    (test_fill_occurs_at_next_bar_open_not_signal_bar_close).
+  - Regime call cadence: classify() called once per new closed HTF candle, not once
+    per LTF bar (test_classify_called_once_per_new_htf_candle_not_per_ltf_bar) — this
+    was an unstated but load-bearing timing assumption in the Phase 3 classifier;
+    verified explicit this phase.
+
+  Deliverables:
+    bot/strategies/base.py — Signal dataclass + Strategy Protocol (CLAUDE.md Core
+      Interfaces), shared by backtest and future live loop.
+    bot/backtest/sizing.py — size_position(): units = f(equity, risk_pct,
+      stop_distance, pip_value). Three currency-conversion cases (direct/self/cross),
+      SizingError with no static fallback, backward-only rate lookup (no lookahead).
+      Single implementation — Phase 8's RiskManager will import, not reimplement.
+    bot/backtest/costs.py — session-bucketed spread (asian/london/ny_overlap),
+      asymmetric slippage (entries + SL exits, doubled on EXPANSION exit, none on
+      TP), max-spread entry gate (same threshold backtester and future live executor
+      will both enforce), rollover cost per UTC-day crossing.
+    bot/backtest/results.py — BacktestTrade/BacktestResult, compute_metrics() (net
+      PnL, win%, maxDD, trade count, per-regime breakdown — structurally ready for
+      §5.5 once real strategies populate more than one regime_at_entry value).
+    bot/backtest/engine.py — BacktestEngine: HTF/LTF pointer-walk (merge_asof-
+      backward equivalent), regime cached between HTF closes, SL/TP exit sim
+      (SL-first tie-break on same-bar touch), wires sizing.py + costs.py.
+    bot/config/instruments.yaml — account_currency: USD (top-level); per-instrument
+      cost_model blocks (spread_pips sessions, max_spread_pips, slippage_pips,
+      rollover_pips_long/short) seeded PENDING (null) — NOT published-typical
+      numbers, per explicit user direction.
+    config.py — ACCOUNT_CURRENCY.
+    scripts/sample_spreads.py — standalone, read-only PricingInfo sampler to seed
+      real cost_model values; not yet run against live OANDA (needs the user to
+      schedule it across a day+ spanning all three sessions).
+    tests/test_sizing.py (13), tests/test_costs.py (15), tests/test_backtest.py (6).
 
 Not done / next action:
-  Phase 4 kickoff — use PROMPTS.md §5.2 template. Objective: event-driven backtester with
-  spread + slippage + rollover costs; golden-run tests with locked output. Exit criteria:
-  golden-run locked (fixed data→identical metrics on repeat); costs demonstrably reduce PnL
-  vs zero-cost run; same Strategy interface as live path.
+  Phase 5 kickoff (PROMPTS.md §5.2) — trend_pullback + walk-forward validation.
+  Before real backtests are trustworthy: run scripts/sample_spreads.py across a
+  day+ and fill in instruments.yaml cost_model values (currently PENDING/null) —
+  Phase 5's walk-forward numbers are only as good as this calibration.
 
 Open tensions:
-  - sqlite:/// relative URL: Phase 4 journal writer must use same absolute-path resolution as dashboard
-  - pyarrow 24.0.0 / requests 2.34.2 release dates: unverifiable in dev env; flag if PA install rejects
-  - EXPANSION/TRENDING ATR overlap: Phase 4 pass-rates will reveal whether atr_expansion_ratio
-    needs lifting per pair (watch-item; see ROADMAP Compression-within-trend proposal)
+  - cost_model (spread/slippage/rollover) is PENDING for all 6 pairs — engine and
+    tests work fine with inline cost_cfg dicts (decoupled from yaml), but real
+    Phase 5-7 walk-forward runs need real sampled values first, not placeholders.
+  - rollover_pips has no automated sourcing path (OANDA financing rates aren't on
+    the candle/pricing endpoints already in use) — manual entry or a Phase 8
+    account-financing lookup; flagged, not solved, this phase.
+  - Precision rounding (Prime Directive 4) is NOT applied to backtest fill prices —
+    acceptable since Phase 4 submits no real orders; revisit if fidelity vs live
+    becomes a concern once PrecisionRegistry is wired into a shared runtime context.
+  - Engine's SL/TP same-bar tie-break assumes SL triggers first (conservative,
+    standard convention) — not empirically validated against real intrabar path;
+    fine for now, worth a footnote when Phase 5's §5 gates run for real.
+  - Signal.tp=None means "SL-only exit" in the engine; trend_pullback's ATR/
+    Chandelier trailing (Phase 5) will need its own exit-update mechanism — the
+    engine has no trailing hook yet, by design (playbook-specific, not generic).
 
-Files touched this session (Phase 3):
-  bot/indicators/__init__.py, bot/indicators/core.py,
-  bot/regime/__init__.py, bot/regime/classifier.py,
-  bot/config/instruments.yaml, tests/test_indicators.py, tests/test_regime.py,
-  CLAUDE.md (Phase 3 ticked), BRAIN.md (2 seeds), ROADMAP.md (1 proposal), HANDOFF.md
+Files touched this session (Phase 4):
+  bot/strategies/__init__.py, bot/strategies/base.py,
+  bot/backtest/__init__.py, bot/backtest/sizing.py, bot/backtest/costs.py,
+  bot/backtest/results.py, bot/backtest/engine.py,
+  bot/config/instruments.yaml, config.py, scripts/sample_spreads.py,
+  tests/test_sizing.py, tests/test_costs.py, tests/test_backtest.py,
+  CLAUDE.md (Phase 4 ticked), ROADMAP.md (bid/ask-deferred entry), HANDOFF.md
 
 Do NOT redo:
-  - Do not re-run flask db init
-  - Do not change journal model column names without migration
-  - Do not remove complete==True filter from _parse_response()
-  - Do not add cache-freshness guard to get_candles()
-  - Do not call fetch_history() from live loop
-  - format_price() must return str, not float
-  - Do not revert regime priority order (TRENDING before COMPRESSION) — correct market semantics
-  - Do not change ATR to standard EWM (span=period) — must stay Wilder (alpha=1/period)
+  - Do not call RegimeClassifier.classify() more than once per HTF candle close
+    from engine/live-loop code — bars_in_regime hysteresis assumes one call = one bar.
+  - Do not add a static-rate fallback in sizing.py's cross-currency path —
+    SizingError must propagate; refuse, never guess.
+  - Do not compute trade PnL from raw price diff without pip_value_per_unit()
+    conversion — breaks silently for non-USD-quote pairs (GBP/JPY, EUR/GBP).
+  - Do not seed instruments.yaml cost_model with published-typical spread/rollover
+    numbers — must come from scripts/sample_spreads.py sampling (or the Phase 8
+    journal's Order.spread_at_entry once that exists).
+  - Do not fill signals at the signal bar's own close — next bar's open only.
+  - Do not remove the SL-first tie-break without a documented reason (TRADING-RULES
+    §5.7 revalidation note) — it's a conservative convention, not arbitrary.

@@ -2,6 +2,12 @@
 Future work + ideas outside current phase scope. Phase status lives in CLAUDE.md.
 
 ## Deferred (known, intentionally outside Phases 1–11)
+- **Historical bid/ask candles** — Phase 4 backtester costs spread via session-bucketed
+  config values (instruments.yaml cost_model, seeded from scripts/sample_spreads.py
+  live-sampling) rather than historical bid/ask series, since Phase 2's CandleFetcher
+  only pulls mid-price ("M") candles. Only worth the added fetch/cache/storage scope
+  (roughly doubling per-pair data volume) if Phase 11's forward-vs-backtest divergence
+  report specifically implicates cost modeling as the gap — not a default upgrade.
 - **Cross-pair correlation-aware sizing** — v1 handles multi-pair risk via per-currency exposure caps (TRADING-RULES §4.2): blunt but safe. Correlation matrix that downsizes when enabled pairs are highly correlated (GBP/JPY+EUR/JPY) needs real multi-pair trade history first.
 - **Postgres migration** — SQLite+WAL suffices for one writer + one reader. Revisit only if concurrency or PA disk I/O becomes a measured problem.
 - **Live economic-calendar API** — Phase 8 ships blackout windows from a manually maintained weekly config table; §4.6 defines behavior when calendar data is absent.

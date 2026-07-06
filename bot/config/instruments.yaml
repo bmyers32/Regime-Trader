@@ -3,6 +3,10 @@
 # All thresholds in ATR multiples or rolling percentiles — raw price-percent banned (TRADING-RULES §1.2).
 # Per-pair calibration required before enabling (TRADING-RULES §4.9).
 
+# Account currency for pip-value conversion (bot/backtest/sizing.py). Never hardcoded in code —
+# sizing math is generic over currency codes and reads this key.
+account_currency: USD
+
 defaults:
   timeframe_htf: H4       # anchor TF for regime classification
   timeframe_ltf: H1       # execution TF for entries
@@ -28,6 +32,21 @@ defaults:
     bb_compression_window: 100   # rolling window bars for percentile calculation
     regime_confirm_bars: 2       # consecutive anchor candles to confirm a regime switch (§2 law)
     regime_min_hold_bars: 4      # min bars in regime before exit allowed (bypassed for EXPANSION entry)
+
+  # Cost model (Phase 4, bot/backtest/costs.py + sizing.py). No shared defaults here —
+  # per TRADING-RULES §1.7 every threshold ships with a calibration note, and spread/
+  # rollover are pair-specific by nature (GBP/JPY spreads nothing like EUR/USD). Each
+  # instrument below carries its own cost_model block, seeded PENDING (null) until
+  # sampled — see calibration_note on each block for the source.
+  #   spread_pips: session-bucketed (asian/london/ny_overlap UTC-hour buckets, see
+  #     bot.backtest.costs.session_for_hour) — a single average under/over-charges
+  #     half the trading day.
+  #   max_spread_pips: entry gate — backtester AND (Phase 8) live executor refuse
+  #     entries when the current session spread exceeds this, same threshold both places.
+  #   slippage_pips: charged on market entries and SL exits; doubled on SL exits when
+  #     the regime at exit is EXPANSION; never charged on TP fills.
+  #   rollover_pips_long/short: per-unit cost applied once per UTC-day rollover-time
+  #     (22:00 UTC, approximate) crossed while a position is open.
 
 instruments:
   GBP_JPY:
@@ -61,6 +80,21 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
 
   EUR_USD:
     enabled: false
@@ -91,6 +125,21 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
 
   USD_JPY:
     enabled: false
@@ -121,6 +170,21 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
 
   GBP_USD:
     enabled: false
@@ -150,6 +214,21 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
 
   AUD_USD:
     enabled: false
@@ -180,6 +259,21 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
 
   EUR_GBP:
     enabled: false
@@ -211,3 +305,18 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    cost_model:
+      spread_pips:
+        asian: null
+        london: null
+        ny_overlap: null
+      max_spread_pips: null
+      slippage_pips: null
+      rollover_pips_long: null
+      rollover_pips_short: null
+      calibration_note: >
+        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
+        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
+        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
+        available via the candle/pricing endpoints already in use. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing recalibration source.

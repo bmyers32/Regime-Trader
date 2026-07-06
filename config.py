@@ -39,3 +39,4 @@ with open(_INSTRUMENTS_PATH) as _f:
 
 INSTRUMENT_DEFAULTS: dict = _raw.get("defaults", {})
 INSTRUMENTS: dict = _raw.get("instruments", {})
+ACCOUNT_CURRENCY: str = _raw.get("account_currency", "USD")
