@@ -38,8 +38,7 @@ _CFG = {
     "spread_pips": {"asian": 3.0, "london": 1.0, "ny_overlap": 1.5},
     "max_spread_pips": 2.0,
     "slippage_pips": 0.5,
-    "rollover_pips_long": -0.3,
-    "rollover_pips_short": 0.1,
+    "rollover_pips_per_day": {"long": -0.3, "short": 0.1},
 }
 
 
@@ -141,6 +140,21 @@ def test_rollover_zero_within_same_day_before_rollover_hour():
     entry = _ts(2024, 1, 1, 10)
     exit_ = _ts(2024, 1, 1, 20)
     assert rollover_crossings(entry, exit_) == 0
+
+
+def test_rollover_counts_weekend_calendar_days_not_bars():
+    """
+    rollover_crossings() operates only on entry_ts/exit_ts via timedelta(days=1) — it
+    has no visibility into the LTF/HTF bar index and cannot "skip" a day just because
+    no candle exists on it (forex is closed weekends). A Friday->Monday hold must
+    therefore accrue Saturday and Sunday nights too (3 crossings for 3 calendar days),
+    matching real-world financing accrual over calendar time, not trading time. If this
+    ever regresses to skipping weekends, multi-day holds would undercharge financing by
+    2/7 relative to the real broker cost.
+    """
+    friday_10am = _ts(2024, 1, 5, 10)   # 2024-01-05 is a Friday
+    monday_10am = _ts(2024, 1, 8, 10)   # 2024-01-08 is the following Monday
+    assert rollover_crossings(friday_10am, monday_10am) == 3
 
 
 def test_rollover_one_crossing():

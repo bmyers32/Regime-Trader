@@ -45,8 +45,17 @@ defaults:
   #     entries when the current session spread exceeds this, same threshold both places.
   #   slippage_pips: charged on market entries and SL exits; doubled on SL exits when
   #     the regime at exit is EXPANSION; never charged on TP fills.
-  #   rollover_pips_long/short: per-unit cost applied once per UTC-day rollover-time
-  #     (22:00 UTC, approximate) crossed while a position is open.
+  #   rollover_pips_per_day.long/short: per-unit cost applied once per UTC-day
+  #     rollover-time (22:00 UTC, approximate) crossed while a position is open.
+  #     Sourced from OANDA's own published per-instrument financing rates via
+  #     scripts/fetch_financing_rates.py (converts the broker's annualized
+  #     longRate/shortRate into a daily-pip figure) — NOT a manual guess.
+  #
+  # RE-BASELINE RULE: filling in any PENDING value below (spread, slippage, rollover)
+  # WILL shift golden-run / walk-forward metrics for any Phase 5+ strategy that reads
+  # these values. Required sequence: fill values -> re-run existing goldens/walk-forward
+  # -> expect the shift -> re-baseline deliberately with a dated note here and in the
+  # relevant test file. Never regenerate a baseline silently (PROMPTS.md §5.7).
 
 instruments:
   GBP_JPY:
@@ -87,14 +96,28 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.
 
   EUR_USD:
     enabled: false
@@ -132,14 +155,28 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.
 
   USD_JPY:
     enabled: false
@@ -177,14 +214,28 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.
 
   GBP_USD:
     enabled: false
@@ -221,14 +272,28 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.
 
   AUD_USD:
     enabled: false
@@ -266,14 +331,28 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.
 
   EUR_GBP:
     enabled: false
@@ -312,11 +391,25 @@ instruments:
         ny_overlap: null
       max_spread_pips: null
       slippage_pips: null
-      rollover_pips_long: null
-      rollover_pips_short: null
+      rollover_pips_per_day:
+        long: null
+        short: null
       calibration_note: >
-        PENDING — seed via scripts/sample_spreads.py (OANDA PricingInfo) across sessions
-        for a day+; do not fill with published-typical numbers (TRADING-RULES §1.7).
-        Rollover rates need manual entry or a Phase 8 account-financing lookup — not
-        available via the candle/pricing endpoints already in use. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing recalibration source.
+        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
+        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
+        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
+        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
+        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
+        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
+        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
+        walk-forward baseline that reads them — see RE-BASELINE RULE above.
+        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        reads OANDA's CURRENT published rate once and that single value is then applied
+        as a constant across the entire historical backtest window, even though real
+        financing rates drift over time (they track central-bank policy rates, which
+        moved materially across most 2-year backtest windows). This overstates or
+        understates rollover cost for older segments of the backtest. Acceptable for
+        Phase 4-7 (rollover is a minor cost component next to spread/slippage for
+        typical hold times); revisit if Phase 11 forward-vs-backtest divergence
+        implicates rollover specifically, or before running a strategy whose edge
+        depends on very long holds.

@@ -17,14 +17,21 @@ never charged on TP fills (resting order, no urgency); doubled on SL exits when 
 exit-time regime is EXPANSION (fast-moving market, worse realistic fills).
 
 Rollover is a per-unit cost applied once per UTC-day rollover-time crossed while a
-position is open — see rollover_crossings().
+position is open — see rollover_crossings(). Crossings are counted in CALENDAR days
+(entry_ts -> exit_ts via raw timedelta arithmetic, no bar/dataframe lookup), so a
+weekend-spanning hold accrues Saturday and Sunday nights too — real financing accrues
+over calendar time, not trading time; skipping weekend days would undercharge a
+multi-day hold by 2/7. rollover_pips_per_day values are sourced from OANDA's own
+published per-instrument financing rates (scripts/fetch_financing_rates.py converts
+the broker's annualized longRate/shortRate into a daily-pip figure), NOT a
+manually-guessed number — TRADING-RULES §5.2 requires this cost in every backtest, and
+a fabricated rate would be worse than an honest zero.
 
 cost_cfg is a plain dict (same pattern as RegimeClassifier's params dict) with keys:
   spread_pips: {"asian": float, "london": float, "ny_overlap": float}
   max_spread_pips: float
   slippage_pips: float
-  rollover_pips_long: float
-  rollover_pips_short: float
+  rollover_pips_per_day: {"long": float, "short": float}
 Callers are responsible for resolving instruments.yaml's PENDING (null) placeholders
 into real numbers before use — this module does no config loading of its own.
 """
@@ -41,8 +48,7 @@ ZERO_COST_MODEL: dict = {
     "spread_pips": {"asian": 0.0, "london": 0.0, "ny_overlap": 0.0},
     "max_spread_pips": float("inf"),
     "slippage_pips": 0.0,
-    "rollover_pips_long": 0.0,
-    "rollover_pips_short": 0.0,
+    "rollover_pips_per_day": {"long": 0.0, "short": 0.0},
 }
 
 
@@ -135,5 +141,6 @@ def rollover_cost_pips(
 ) -> float:
     """Total rollover cost in pips (sign encodes cost vs credit) for the held period."""
     nights = rollover_crossings(entry_ts, exit_ts, rollover_hour)
-    rate = cost_cfg["rollover_pips_long"] if direction == "long" else cost_cfg["rollover_pips_short"]
+    per_day = cost_cfg["rollover_pips_per_day"]
+    rate = per_day["long"] if direction == "long" else per_day["short"]
     return rate * nights

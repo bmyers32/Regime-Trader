@@ -20,8 +20,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bot.backtest.costs import ZERO_COST_MODEL
+from bot.backtest.costs import ZERO_COST_MODEL, rollover_cost_pips
 from bot.backtest.engine import BacktestEngine
+from bot.backtest.sizing import pip_value_per_unit
 from bot.regime.classifier import RegimeClassifier, RegimeResult, RegimeState
 from bot.strategies.base import Signal
 
@@ -45,8 +46,7 @@ _COST_CFG = {
     "spread_pips": {"asian": 2.0, "london": 1.0, "ny_overlap": 1.2},
     "max_spread_pips": 5.0,
     "slippage_pips": 0.3,
-    "rollover_pips_long": -0.2,
-    "rollover_pips_short": 0.05,
+    "rollover_pips_per_day": {"long": -0.2, "short": 0.05},
 }
 
 
@@ -187,6 +187,47 @@ def test_costs_reduce_pnl_vs_zero_cost():
     assert with_costs.metrics["trade_count"] > 0
     assert zero_cost.metrics["trade_count"] > 0
     assert with_costs.metrics["net_pnl"] < zero_cost.metrics["net_pnl"]
+
+
+def test_multi_day_hold_incurs_rollover_cost():
+    """
+    TRADING-RULES §5.2 requires rollover as a backtest cost, not just spread/slippage.
+    This golden dataset's single trade holds 10 days (2024-01-03 -> 2024-01-13), crossing
+    10 UTC-day rollover boundaries — isolates rollover's contribution by comparing net PnL
+    against an identical cost model with rollover zeroed out, and checks the delta matches
+    a hand-computed rollover_cost_pips() conversion exactly (not just "some difference").
+    """
+    ltf = _synthetic_ltf()
+    htf = _aggregate_htf(ltf)
+
+    cfg_with_rollover = _COST_CFG
+    cfg_no_rollover = {
+        **_COST_CFG,
+        "rollover_pips_per_day": {"long": 0.0, "short": 0.0},
+    }
+
+    with_rollover = _make_engine(cfg_with_rollover).run(ltf, htf)
+    no_rollover = _make_engine(cfg_no_rollover).run(ltf, htf)
+
+    assert len(with_rollover.trades) == 1
+    assert len(no_rollover.trades) == 1
+
+    trade = with_rollover.trades[0]
+    hold_nights = (trade.exit_ts - trade.entry_ts).days
+    assert hold_nights >= 2, "test setup must produce a genuinely multi-day hold"
+
+    expected_rollover_pips = rollover_cost_pips(
+        cfg_with_rollover, trade.direction, trade.entry_ts, trade.exit_ts
+    )
+    pv = pip_value_per_unit(
+        "EUR_USD", "USD", trade.exit_px, trade.exit_ts,
+    )
+    expected_rollover_pnl = expected_rollover_pips * pv * trade.units
+
+    actual_delta = with_rollover.metrics["net_pnl"] - no_rollover.metrics["net_pnl"]
+    assert actual_delta == pytest.approx(expected_rollover_pnl, rel=1e-9)
+    # cfg_with_rollover's long rate is negative (a cost, not a credit) for this direction.
+    assert expected_rollover_pnl < 0
 
 
 # ---------------------------------------------------------------------------
