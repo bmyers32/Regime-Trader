@@ -73,3 +73,36 @@ One-time historical fill (startup), gap-fill on restart, and per-cycle increment
 different cost, frequency, and failure modes. Collapsing them → full historical fetch every cycle
 (§1.12 violation), or stale data on restart, or blocking the live loop with minutes of API calls.
 Each function is a different contract; sharing implementation is fine, sharing call sites is not.
+
+### Verification failing closed is the system succeeding.
+*Phase 5 — OANDA TLS handshake rejected on a local machine, cause never confirmed*
+A certificate chain that fails to verify and a request that never reaches the wire are
+not a bug to route around — they are the exact behavior TLS verification exists to
+produce. Under time pressure the temptation is to treat "the check blocked me" as an
+obstacle; the correct read is "the check did its job." The first theory (employer
+network TLS inspection) didn't survive a second data point — the identical failure
+recurred from the home network too, meaning the actual cause was never root-caused.
+That didn't matter: no CA bundle changes, no proxy config, no disabled verification —
+the fix was routing the credentialed call through a known-good path (PA console)
+instead of trying to make an unexplained failure go away locally.
+Ignoring it → specific failure: a disabled/bypassed verification step "succeeds" once,
+then silently accepts a MITM'd response (or transmits a real token through one)
+indefinitely, with no log line marking the moment trust was removed.
+Applies anywhere a security check's failure gets treated as friction instead of signal:
+cert verification, signature checks, permission prompts, secrets-grep pre-commit hooks.
+
+### Grouped spec conditions are one score, not gates in disguise.
+*Phase 5 — EMA200 pullback depth implemented as a hard veto instead of a score component*
+TRADING-RULES §3.1 lists pullback-zone proximity, reversal trigger, RSI, and EMA200
+depth together under one "Score:" bullet, separate from "Hard gates: regime; spread;
+blackout." Implementing the last item as an unconditional veto (non-empty vetoes never
+fire, regardless of the other three) is functionally a 4th hard gate — the exact
+AND-stack shape TRADING-RULES §1.1 was written to kill, reintroduced one field at a
+time because a boolean-shaped check (on-side or not) reads like a gate even when the
+spec already said it wasn't one.
+Ignoring it → specific failure: score components silently regain veto power one at a
+time until "weighted confluence" degrades back into the 7-condition AND-stack whose
+near-zero signal probability was the original failure being fixed.
+Applies anywhere a spec lists several conditions under one heading (one score, one
+config block, one validation pass): the implementation must preserve that they trade
+off against each other, not each become an independent kill-switch.

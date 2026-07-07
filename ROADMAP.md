@@ -39,6 +39,23 @@ Future work + ideas outside current phase scope. Phase status lives in CLAUDE.md
 **Reasoning:** Gates are only as strong as their friction is low; one-command revalidation actually gets run after every tweak.
 **Why deferred:** Needs Phases 4–5. Build immediately after — before playbooks 2–3 so they're validated with it from birth.
 
+### Partial-close representation in the live Order/Trade journal
+**Idea:** bot/backtest/engine.py's exit_cfg now models trend_pullback's "partial at 1R,
+trail remainder" as one entry producing two priced legs (BacktestTrade.partial_exit_*
+fields alongside the terminal exit) while staying one row per entry. Phase 8's live
+executor will submit a REAL OANDA partial-close order for the first leg and a second
+close for the remainder — the current Order/Trade journal schema (bot/journal/models.py)
+assumes one Order -> one Trade -> one open/close pair.
+**Reasoning:** Prime Directive 7 requires backtest and live to share the same strategy
+code path; if Phase 8 doesn't also model two closes per entry, backtest-vs-live parity
+breaks exactly in the dimension Phase 11's forward-test divergence report measures.
+**Design questions:** A second Trade row linked to the same Order (partial_of_trade_id
+FK)? Or extend Trade with its own partial_exit_* columns mirroring BacktestTrade's?
+Does SignalLog/Order need a "partial" status distinct from "filled"?
+**Why deferred:** Needs Phase 8's execution/journal design session — surfaced here
+during Phase 5 (HANDOFF.md 2026-07-06 Session A, Decision 1e) so it isn't rediscovered
+cold when Phase 8 starts.
+
 ### Compression-within-trend signal flag
 **Idea:** When TRENDING regime fires and BB width is simultaneously below its rolling percentile, pass a `compression_flag=True` into the SignalLog indicator_snapshot. The trend_pullback strategy can optionally tighten its score threshold when the flag is set, favouring only the highest-confidence pullback entries.
 **Reasoning:** During Phase 3, the classifier priority debate revealed that TRENDING and COMPRESSION can be simultaneously true — the classifier resolves the conflict by picking TRENDING, but the compression state carries information. A pullback within a compressed trend tends to resolve sharply in the trend direction, making it a potentially tighter entry.
