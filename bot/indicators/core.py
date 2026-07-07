@@ -103,3 +103,90 @@ def bb_width(
     Comparable across price levels. Returns NaN where middle == 0.
     """
     return (upper - lower) / middle.where(middle != 0.0, np.nan)
+
+
+def rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    """
+    Relative Strength Index via Wilder smoothing (alpha = 1/period, adjust=False) —
+    same convention as atr()/adx() for consistency (TRADING-RULES: visually-similar
+    formulas diverge at the decimal where thresholds live; one smoothing convention
+    throughout avoids that trap).
+
+    avg_loss == 0 saturates RSI at 100 (all gains, no losses in the smoothing window)
+    unless avg_gain is also 0 (a flat series), which is neutral at 50 rather than
+    an undefined 0/0.
+    """
+    delta = close.diff()
+    gain = delta.clip(lower=0.0)
+    loss = (-delta).clip(lower=0.0)
+
+    avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+
+    avg_loss_safe = avg_loss.where(avg_loss != 0.0, np.nan)
+    rs = avg_gain / avg_loss_safe
+    result = 100.0 - 100.0 / (1.0 + rs)
+    return result.where(avg_loss != 0.0, np.where(avg_gain == 0.0, 50.0, 100.0))
+
+
+def body_pct(
+    open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series
+) -> pd.Series:
+    """Candle body as a fraction of its full range: |close-open| / (high-low). NaN where high==low."""
+    candle_range = high - low
+    return (close - open_).abs() / candle_range.where(candle_range != 0.0, np.nan)
+
+
+def bullish_engulfing(open_: pd.Series, close: pd.Series) -> pd.Series:
+    """Prior candle bearish, current candle bullish, current body fully contains prior body."""
+    prev_open = open_.shift(1)
+    prev_close = close.shift(1)
+    prev_bearish = prev_close < prev_open
+    current_bullish = close > open_
+    engulfs = (open_ <= prev_close) & (close >= prev_open)
+    return (prev_bearish & current_bullish & engulfs).fillna(False)
+
+
+def bearish_engulfing(open_: pd.Series, close: pd.Series) -> pd.Series:
+    """Prior candle bullish, current candle bearish, current body fully contains prior body."""
+    prev_open = open_.shift(1)
+    prev_close = close.shift(1)
+    prev_bullish = prev_close > prev_open
+    current_bearish = close < open_
+    engulfs = (open_ >= prev_close) & (close <= prev_open)
+    return (prev_bullish & current_bearish & engulfs).fillna(False)
+
+
+def heikin_ashi(
+    open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series]:
+    """
+    Heikin-Ashi OHLC. ha_close is a plain vectorized average; ha_open is a recursive
+    running average (ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2) with no closed
+    vectorized form — EXCEPT it is exactly an EWM(alpha=0.5, adjust=False) driven by
+    ha_close shifted by one bar, seeded at index 0 with (open[0]+close[0])/2. Using
+    ewm() (pandas' C-level recursion) keeps this vectorized without a per-row loop.
+    """
+    ha_close = (open_ + high + low + close) / 4.0
+
+    driver = ha_close.shift(1)
+    driver.iloc[0] = (open_.iloc[0] + close.iloc[0]) / 2.0
+    ha_open = driver.ewm(alpha=0.5, adjust=False).mean()
+
+    ha_high = pd.concat([high, ha_open, ha_close], axis=1).max(axis=1)
+    ha_low = pd.concat([low, ha_open, ha_close], axis=1).min(axis=1)
+    return ha_open, ha_high, ha_low, ha_close
+
+
+def heikin_ashi_bullish_flip(ha_open: pd.Series, ha_close: pd.Series) -> pd.Series:
+    """Current HA candle bullish, prior HA candle was bearish-or-flat."""
+    current_bullish = ha_close > ha_open
+    prev_not_bullish = ha_close.shift(1) <= ha_open.shift(1)
+    return (current_bullish & prev_not_bullish).fillna(False)
+
+
+def heikin_ashi_bearish_flip(ha_open: pd.Series, ha_close: pd.Series) -> pd.Series:
+    """Current HA candle bearish, prior HA candle was bullish-or-flat."""
+    current_bearish = ha_close < ha_open
+    prev_not_bearish = ha_close.shift(1) >= ha_open.shift(1)
+    return (current_bearish & prev_not_bearish).fillna(False)

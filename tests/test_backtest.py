@@ -20,9 +20,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bot.backtest.costs import ZERO_COST_MODEL, rollover_cost_pips
+from bot.backtest.costs import ZERO_COST_MODEL, apply_exit_cost, rollover_cost_pips
 from bot.backtest.engine import BacktestEngine
-from bot.backtest.sizing import pip_value_per_unit
+from bot.backtest.sizing import pip_size, pip_value_per_unit
 from bot.regime.classifier import RegimeClassifier, RegimeResult, RegimeState
 from bot.strategies.base import Signal
 
@@ -329,3 +329,325 @@ def test_classify_called_once_per_new_htf_candle_not_per_ltf_bar():
     ltf_bars_with_htf_available = len(ltf) - 4 + 1
     assert counting_classifier.call_count == len(htf)
     assert counting_classifier.call_count < ltf_bars_with_htf_available
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 exit-criteria tests — partial-at-1R + ATR/Chandelier trail (exit_cfg)
+# and near-miss signal_log/funnel (HANDOFF.md Session A Decisions 1 & 3).
+# ---------------------------------------------------------------------------
+
+class _OneShotLongStrategy:
+    """Fires exactly one long Signal, once, at the first bar the window reaches
+    `warmup` length — deterministic single round-trip for exit_cfg mechanics tests."""
+
+    def __init__(self, warmup: int = 5, sl_distance: float = 0.0050):
+        self.warmup = warmup
+        self.sl_distance = sl_distance
+        self._fired = False
+
+    def generate_signal(self, window: pd.DataFrame, regime: RegimeResult) -> Signal | None:
+        if self._fired or len(window) < self.warmup:
+            return None
+        self._fired = True
+        last_close = window["close"].iloc[-1]
+        return Signal(
+            strategy="one_shot_test_double",
+            instrument="EUR_USD",
+            direction="long",
+            entry_ref=last_close,
+            sl=last_close - self.sl_distance,
+            tp=None,
+            confidence_score=1.0,
+            reasons=["one_shot_test_signal"],
+        )
+
+
+def _deterministic_bars(times: list, ohlc: list[tuple[float, float, float, float]]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "time": times,
+            "open": [b[0] for b in ohlc],
+            "high": [b[1] for b in ohlc],
+            "low": [b[2] for b in ohlc],
+            "close": [b[3] for b in ohlc],
+            "volume": 100,
+            "complete": True,
+        }
+    )
+
+
+# 10 hand-designed bars: flat warmup (i0-4, signal generated at i4), entry fills at
+# i5's open (1.1000), rises to cross the 1R partial target (1.1050) at i7, extends
+# the trail's peak at i8 (1.1080), then crashes at i9 (low 1.0900) to force a trail exit.
+_TRAIL_OHLC = [
+    (1.1000, 1.1002, 1.0998, 1.1000),  # i0
+    (1.1000, 1.1002, 1.0998, 1.1000),  # i1
+    (1.1000, 1.1002, 1.0998, 1.1000),  # i2
+    (1.1000, 1.1002, 1.0998, 1.1000),  # i3
+    (1.1000, 1.1002, 1.0998, 1.1000),  # i4 - signal generated (window len 5)
+    (1.1000, 1.1005, 1.0995, 1.1000),  # i5 - entry fills at open=1.1000
+    (1.1000, 1.1020, 1.0995, 1.1015),  # i6
+    (1.1015, 1.1060, 1.1010, 1.1055),  # i7 - high crosses 1.1050 (1R) -> partial fires
+    (1.1055, 1.1080, 1.1050, 1.1075),  # i8 - new peak extends the trail
+    (1.1075, 1.1078, 1.0900, 1.0910),  # i9 - crash breaches the trail stop -> exit
+]
+
+_EXIT_CFG = {
+    "partial_fraction": 0.5,
+    "partial_at_r": 1.0,
+    "breakeven_after_partial": False,
+    "trail_atr_period": 3,
+    "trail_atr_mult": 2.0,
+}
+
+
+def _hourly_times(n: int, start: str = "2024-01-01T00:00:00Z") -> list:
+    base = pd.Timestamp(start, tz=timezone.utc)
+    return [base + timedelta(hours=i) for i in range(n)]
+
+
+class TestPartialAndTrailExit:
+    def test_partial_fires_at_1r_then_trail_exit_above_original_sl(self) -> None:
+        ltf = _deterministic_bars(_hourly_times(len(_TRAIL_OHLC)), _TRAIL_OHLC)
+        htf = _aggregate_htf(ltf, ratio=4)
+
+        engine = BacktestEngine(
+            strategy=_OneShotLongStrategy(),
+            regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+            instrument="EUR_USD",
+            account_currency="USD",
+            risk_pct=1.0,
+            starting_equity=10_000.0,
+            cost_cfg=ZERO_COST_MODEL,
+            exit_cfg=_EXIT_CFG,
+        )
+        result = engine.run(ltf, htf)
+
+        assert len(result.trades) == 1
+        trade = result.trades[0]
+
+        # Partial leg: exactly 1R (entry 1.1000 + 1.0 * stop_distance 0.0050 = 1.1050),
+        # limit-style (ZERO_COST_MODEL makes the "no slippage" distinction moot here,
+        # but the price must be the exact 1R level, not the bar's high).
+        assert trade.partial_exit_ts is not None
+        assert trade.partial_exit_px == pytest.approx(1.1050, abs=1e-9)
+        assert trade.partial_exit_units == pytest.approx(trade.units * 0.5, rel=1e-9)
+
+        expected_partial_pips = (1.1050 - 1.1000) / pip_size("EUR_USD")
+        pv = pip_value_per_unit("EUR_USD", "USD", 1.1050, trade.partial_exit_ts)
+        expected_partial_pnl = expected_partial_pips * pv * trade.partial_exit_units
+        assert trade.partial_exit_pnl == pytest.approx(expected_partial_pnl, rel=1e-9)
+
+        # Remainder: exits via the trail, not the original fixed stop (1.1000-0.0050=1.0950).
+        # A "trail" exit price strictly above the original SL proves genuine trailing
+        # behavior occurred rather than a plain stop-out.
+        assert trade.exit_reason == "trail"
+        assert trade.exit_px > 1.0950
+        assert trade.exit_px < 1.1080  # below the peak — the trail gave back some profit, as designed
+
+    def test_exit_cfg_none_never_produces_a_partial_leg(self) -> None:
+        """Regression guard: without exit_cfg, no BacktestTrade ever gets a partial leg —
+        exact Phase 4 behavior (fixed SL/TP only), matching HANDOFF.md Decision 1's
+        zero-regression requirement."""
+        ltf = _deterministic_bars(_hourly_times(len(_TRAIL_OHLC)), _TRAIL_OHLC)
+        htf = _aggregate_htf(ltf, ratio=4)
+
+        engine = BacktestEngine(
+            strategy=_OneShotLongStrategy(),
+            regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+            instrument="EUR_USD",
+            account_currency="USD",
+            risk_pct=1.0,
+            starting_equity=10_000.0,
+            cost_cfg=ZERO_COST_MODEL,
+        )
+        result = engine.run(ltf, htf)
+
+        assert len(result.trades) == 1
+        trade = result.trades[0]
+        assert trade.partial_exit_ts is None
+        assert trade.partial_exit_px is None
+        assert trade.partial_exit_units is None
+        assert trade.partial_exit_pnl is None
+        # Without a trail, the same crash bar (i9, low=1.0900) blows straight through
+        # the original fixed SL (1.0950) instead of trailing profitably above it.
+        assert trade.exit_reason == "sl"
+        assert trade.exit_px == pytest.approx(1.0950, abs=1e-9)
+
+
+class TestPartialSplitsRolloverBySegment:
+    def test_rollover_charged_on_units_actually_held_per_segment(self) -> None:
+        """
+        Same OHLC shape as the trail test, but with breakeven_after_partial=True so
+        the remainder's exit price is deterministically the entry price (adjusted only
+        for cost) regardless of the ATR/Chandelier path — isolating the rollover-
+        segmentation math from any need to hand-trace the trail's ATR value.
+        Multi-day-spaced timestamps on entry/partial/exit force >=1 rollover crossing
+        in each segment, with DIFFERENT unit sizes (full initial_units pre-partial,
+        half remaining post-partial) — proving the two-segment calc, not a single
+        flat-units-for-the-whole-hold calc, drives the result (HANDOFF.md Decision 1d).
+        """
+        times = _hourly_times(len(_TRAIL_OHLC))
+        # Re-time only the bars that matter for rollover crossings: entry fill (i5),
+        # partial (i7), final exit (i9). Earlier warmup bars keep tight hourly spacing
+        # (irrelevant to rollover, which only reads entry_ts/exit_ts/partial_exit_ts).
+        times[5] = pd.Timestamp("2024-02-01T10:00:00Z", tz=timezone.utc)
+        times[6] = times[5] + timedelta(hours=1)
+        times[7] = pd.Timestamp("2024-02-04T10:00:00Z", tz=timezone.utc)  # +3 calendar days
+        times[8] = times[7] + timedelta(hours=1)
+        times[9] = pd.Timestamp("2024-02-09T10:00:00Z", tz=timezone.utc)  # +5 more calendar days
+        ltf = _deterministic_bars(times, _TRAIL_OHLC)
+        htf = _aggregate_htf(ltf, ratio=4)
+
+        # trail_atr_mult set very large so the Chandelier trail level is always far
+        # below breakeven (never ratchets sl past it) — isolates the rollover-segment
+        # math from the trail's ATR path entirely, per this test's own docstring.
+        exit_cfg = {**_EXIT_CFG, "breakeven_after_partial": True, "trail_atr_mult": 100.0}
+        engine = BacktestEngine(
+            strategy=_OneShotLongStrategy(),
+            regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+            instrument="EUR_USD",
+            account_currency="USD",
+            risk_pct=1.0,
+            starting_equity=10_000.0,
+            cost_cfg=_COST_CFG,
+            exit_cfg=exit_cfg,
+        )
+        result = engine.run(ltf, htf)
+
+        assert len(result.trades) == 1
+        trade = result.trades[0]
+        assert trade.partial_exit_ts is not None
+        assert trade.exit_reason == "trail"
+
+        remaining_units = trade.units - trade.partial_exit_units
+
+        # Remainder exit price is breakeven — but breakeven is pinned to the FILLED
+        # entry price (position["sl"] = position["entry_px"] in _execute_partial), not
+        # the strategy's raw signal close — adjusted for the same apply_exit_cost() a
+        # "trail" exit_reason applies, computed independently here via the production
+        # function, not hand-derived.
+        expected_remainder_exit_px = apply_exit_cost(
+            trade.entry_px, "long", "EUR_USD", _COST_CFG, trade.exit_ts, "trail", exit_regime=trade.regime_at_entry,
+        )
+        assert trade.exit_px == pytest.approx(expected_remainder_exit_px, rel=1e-9)
+
+        pv = pip_value_per_unit("EUR_USD", "USD", trade.exit_px, trade.exit_ts)
+        remainder_pips = (expected_remainder_exit_px - trade.entry_px) / pip_size("EUR_USD")
+        remainder_pnl = remainder_pips * pv * remaining_units
+
+        expected_rollover_segmented = (
+            rollover_cost_pips(_COST_CFG, "long", trade.entry_ts, trade.partial_exit_ts) * pv * trade.units
+            + rollover_cost_pips(_COST_CFG, "long", trade.partial_exit_ts, trade.exit_ts) * pv * remaining_units
+        )
+        naive_rollover_flat_units = (
+            rollover_cost_pips(_COST_CFG, "long", trade.entry_ts, trade.exit_ts) * pv * trade.units
+        )
+
+        # The segmented calc must differ from the naive flat-units calc — otherwise
+        # this test can't distinguish "segmented" from "not segmented" at all.
+        assert expected_rollover_segmented != pytest.approx(naive_rollover_flat_units, rel=1e-9)
+
+        expected_total_pnl = trade.partial_exit_pnl + remainder_pnl + expected_rollover_segmented
+        assert trade.pnl == pytest.approx(expected_total_pnl, rel=1e-9)
+
+
+class _ScriptedSignalStrategy:
+    """
+    Returns a scripted sequence of Signal evaluations (one per generate_signal() call)
+    to exercise BacktestEngine's near-miss signal_log/funnel accounting deterministically
+    (HANDOFF.md Session A Decision 3). Once a position opens, the engine stops
+    consulting the strategy (matches every other Strategy in this file), so the script
+    only needs to cover evaluations up to and including the eventual "fire".
+    """
+
+    def __init__(self, script: list[str], warmup: int = 5):
+        self._script = script
+        self.warmup = warmup
+        self._call_index = 0
+
+    def generate_signal(self, window: pd.DataFrame, regime: RegimeResult) -> Signal | None:
+        if len(window) < self.warmup or self._call_index >= len(self._script):
+            return None
+        kind = self._script[self._call_index]
+        self._call_index += 1
+        last_close = window["close"].iloc[-1]
+        score = 0.3 if kind == "near_miss" else 0.9
+        vetoes = ["scripted_veto"] if kind == "veto" else []
+        return Signal(
+            strategy="scripted",
+            instrument="EUR_USD",
+            direction="long",
+            entry_ref=last_close,
+            sl=last_close - 0.0050,
+            tp=None,
+            confidence_score=score,
+            vetoes=vetoes,
+        )
+
+
+class TestNearMissSignalFunnel:
+    def test_funnel_counts_and_signal_log_distinguish_veto_near_miss_and_fire(self) -> None:
+        ltf = _synthetic_ltf(n_bars=60)
+        htf = _aggregate_htf(ltf)
+
+        strategy = _ScriptedSignalStrategy(script=["veto", "near_miss", "fire"], warmup=5)
+        engine = BacktestEngine(
+            strategy=strategy,
+            regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+            instrument="EUR_USD",
+            account_currency="USD",
+            risk_pct=1.0,
+            starting_equity=10_000.0,
+            cost_cfg=ZERO_COST_MODEL,
+            signal_threshold=0.6,
+        )
+        result = engine.run(ltf, htf)
+
+        assert len(result.signal_log) == 3
+        assert result.signal_log[0].vetoes == ["scripted_veto"]
+        assert result.signal_log[0].fired is False
+        assert result.signal_log[1].fired is False  # near-miss: no vetoes, but score < threshold
+        assert not result.signal_log[1].vetoes
+        assert result.signal_log[2].fired is True
+
+        funnel = result.metrics["signal_funnel"]
+        assert funnel["consulted"] == 3
+        assert funnel["gates_passed"] == 2  # near_miss + fire (veto excluded)
+        assert funnel["threshold_cleared"] == 2  # veto(0.9) + fire(0.9); near_miss(0.3) excluded
+        assert funnel["fired"] == 1
+        assert funnel["score_distribution"]["min"] == pytest.approx(0.3)
+        assert funnel["score_distribution"]["max"] == pytest.approx(0.9)
+
+    def test_record_signals_false_does_not_change_trading_behavior(self) -> None:
+        """
+        record_signals only toggles the log — proven by running the identical scripted
+        strategy with it on vs. off and asserting IDENTICAL trades/metrics either way
+        (not by asserting a specific trade count directly: this scripted strategy's SL
+        is never reached within the 60-bar window, so the opened position simply never
+        closes — equity_curve tracks realized equity only, per engine.py's documented
+        simplification, so an unclosed position is invisible to metrics regardless).
+        """
+        ltf = _synthetic_ltf(n_bars=60)
+        htf = _aggregate_htf(ltf)
+
+        def _make(record_signals: bool) -> BacktestEngine:
+            return BacktestEngine(
+                strategy=_ScriptedSignalStrategy(script=["veto", "near_miss", "fire"], warmup=5),
+                regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+                instrument="EUR_USD",
+                account_currency="USD",
+                risk_pct=1.0,
+                starting_equity=10_000.0,
+                cost_cfg=ZERO_COST_MODEL,
+                signal_threshold=0.6,
+                record_signals=record_signals,
+            )
+
+        with_log = _make(True).run(ltf, htf)
+        without_log = _make(False).run(ltf, htf)
+
+        assert without_log.signal_log == []
+        assert "signal_funnel" not in without_log.metrics
+        assert len(with_log.trades) == len(without_log.trades)
+        assert with_log.metrics["net_pnl"] == pytest.approx(without_log.metrics["net_pnl"])

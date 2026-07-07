@@ -102,7 +102,11 @@ All routes require login (credentials from .env; Flask-Login or HTTP Basic — p
 - Strategy changes: unit tests → golden runs unchanged or deliberately re-baselined → walk-forward re-run noted.
 - One strategy implementation, two drivers (backtest/live).
 - Implied requirements: implement + flag at >80% confidence — never silently add or omit.
-- Comment non-obvious quant logic — developer is learning.
+- Comments explain WHY, never narrate WHAT. Required: TRADING-RULES §-citations wherever
+  code implements a law (anti-drift markers), and brief rationale on non-obvious quant
+  logic. Banned: line narration, docstrings restating signatures, explanations of
+  standard library/pandas idioms. Comments are read at every future file view — each
+  one must earn permanent context cost.
 - UTC only: `datetime.now(timezone.utc)`; bare `datetime.now()` banned.
 - Per-pair config isolation: thresholds live under the instrument's yaml key with calibration note; shared defaults OK only if each pair's calibration confirms.
 - Currency-level exposure caps aggregate across pairs (GBP/JPY+USD/JPY = one JPY bet).

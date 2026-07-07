@@ -21,7 +21,21 @@ import math
 import pandas as pd
 import pytest
 
-from bot.indicators.core import adx, atr, bb_width, bollinger_bands, ema, true_range
+from bot.indicators.core import (
+    adx,
+    atr,
+    bb_width,
+    bearish_engulfing,
+    body_pct,
+    bollinger_bands,
+    bullish_engulfing,
+    ema,
+    heikin_ashi,
+    heikin_ashi_bearish_flip,
+    heikin_ashi_bullish_flip,
+    rsi,
+    true_range,
+)
 
 # ---------------------------------------------------------------------------
 # Golden series constants (canonical 50-bar uptrend)
@@ -285,3 +299,156 @@ class TestBbWidth:
         assert last_width < last_pct, (
             f"Expected compression: last_width={last_width:.8f} < pct20={last_pct:.8f}"
         )
+
+
+# ---------------------------------------------------------------------------
+# RSI (frozen golden — Phase 5, trend_pullback)
+# ---------------------------------------------------------------------------
+
+class TestRsi:
+    def test_golden_all_gains_saturates_at_100(self) -> None:
+        """
+        Strictly monotonic uptrend: loss[i]=0 for all i>=1 -> avg_loss stays exactly
+        0 -> RSI saturates at 100 from bar 1 onward (bar 0's delta is undefined/NaN).
+        Same canonical 50-bar series used for ATR/ADX golden tests.
+        """
+        result = rsi(_CLOSE_50, 14)
+        assert pd.isna(result.iloc[0])
+        assert (result.iloc[1:] - 100.0).abs().max() < 1e-9
+
+    def test_flat_series_is_neutral_50(self) -> None:
+        """No gains, no losses (flat price) -> 0/0 case must resolve to neutral 50, not NaN/inf."""
+        close = _make_constant(30, 100.0)
+        result = rsi(close, 14)
+        assert (result.iloc[1:] - 50.0).abs().max() < 1e-9
+
+    def test_downtrend_saturates_at_0(self) -> None:
+        """Strictly monotonic downtrend: avg_gain stays exactly 0 -> RSI -> 0."""
+        close = pd.Series([2.0 - 0.01 * i for i in range(30)])
+        result = rsi(close, 14)
+        assert result.iloc[1:].abs().max() < 1e-9
+
+    def test_bounded_0_100(self) -> None:
+        close = _make_sine(60, amplitude=2.0)
+        result = rsi(close, 14)
+        valid = result.dropna()
+        assert (valid >= 0.0).all() and (valid <= 100.0).all()
+
+    def test_length_preserved(self) -> None:
+        result = rsi(_CLOSE_50, 14)
+        assert len(result) == _N
+
+
+# ---------------------------------------------------------------------------
+# Candle body / engulfing patterns (Phase 5, trend_pullback reversal trigger)
+# ---------------------------------------------------------------------------
+
+class TestBodyPct:
+    def test_exact_hand_calc(self) -> None:
+        """body=|1.05-1.00|=0.05, range=1.06-0.99=0.07 -> pct=5/7."""
+        open_ = pd.Series([1.00])
+        high = pd.Series([1.06])
+        low = pd.Series([0.99])
+        close = pd.Series([1.05])
+        result = body_pct(open_, high, low, close)
+        assert result.iloc[0] == pytest.approx(5.0 / 7.0, abs=1e-10)
+
+    def test_doji_zero_body(self) -> None:
+        open_ = pd.Series([1.00])
+        close = pd.Series([1.00])
+        high = pd.Series([1.02])
+        low = pd.Series([0.98])
+        result = body_pct(open_, high, low, close)
+        assert result.iloc[0] == pytest.approx(0.0, abs=1e-10)
+
+    def test_zero_range_is_nan(self) -> None:
+        open_ = pd.Series([1.00])
+        close = pd.Series([1.00])
+        high = pd.Series([1.00])
+        low = pd.Series([1.00])
+        result = body_pct(open_, high, low, close)
+        assert pd.isna(result.iloc[0])
+
+
+class TestEngulfing:
+    def test_bullish_engulfing_detected(self) -> None:
+        """Bar0 bearish (1.10->1.08); bar1 bullish (1.07->1.11) fully engulfs bar0's body."""
+        open_ = pd.Series([1.10, 1.07])
+        close = pd.Series([1.08, 1.11])
+        result = bullish_engulfing(open_, close)
+        assert result.iloc[0] == False
+        assert result.iloc[1] == True
+
+    def test_bearish_engulfing_detected(self) -> None:
+        """Bar0 bullish (1.07->1.10); bar1 bearish (1.11->1.06) fully engulfs bar0's body."""
+        open_ = pd.Series([1.07, 1.11])
+        close = pd.Series([1.10, 1.06])
+        result = bearish_engulfing(open_, close)
+        assert result.iloc[0] == False
+        assert result.iloc[1] == True
+
+    def test_non_engulfing_small_body_no_signal(self) -> None:
+        """Bar1's body doesn't fully contain bar0's body -> no engulfing."""
+        open_ = pd.Series([1.10, 1.085])
+        close = pd.Series([1.08, 1.09])
+        result = bullish_engulfing(open_, close)
+        assert result.iloc[1] == False
+
+    def test_first_bar_never_signals(self) -> None:
+        """No previous bar to compare against -> False, not NaN."""
+        open_ = pd.Series([1.10])
+        close = pd.Series([1.08])
+        result = bullish_engulfing(open_, close)
+        assert result.iloc[0] == False
+
+
+class TestHeikinAshi:
+    def test_golden_three_bar_hand_calc(self) -> None:
+        """
+        3-bar hand-verified example (see bot/indicators/core.py docstring for the
+        ha_open recursion == EWM(alpha=0.5) equivalence proof):
+          bar0: o=1.00 h=1.02 l=0.99 c=1.01 -> ha_close=1.005, ha_open=1.005 (seed)
+          bar1: o=1.01 h=1.03 l=1.00 c=1.02 -> ha_close=1.015, ha_open=1.005
+          bar2: o=1.02 h=1.01 l=0.98 c=0.99 -> ha_close=1.000, ha_open=1.010
+        """
+        open_ = pd.Series([1.00, 1.01, 1.02])
+        high = pd.Series([1.02, 1.03, 1.01])
+        low = pd.Series([0.99, 1.00, 0.98])
+        close = pd.Series([1.01, 1.02, 0.99])
+
+        ha_open, ha_high, ha_low, ha_close = heikin_ashi(open_, high, low, close)
+
+        assert ha_close.iloc[0] == pytest.approx(1.005, abs=1e-10)
+        assert ha_open.iloc[0] == pytest.approx(1.005, abs=1e-10)
+        assert ha_high.iloc[0] == pytest.approx(1.02, abs=1e-10)
+        assert ha_low.iloc[0] == pytest.approx(0.99, abs=1e-10)
+
+        assert ha_close.iloc[1] == pytest.approx(1.015, abs=1e-10)
+        assert ha_open.iloc[1] == pytest.approx(1.005, abs=1e-10)
+        assert ha_high.iloc[1] == pytest.approx(1.03, abs=1e-10)
+        assert ha_low.iloc[1] == pytest.approx(1.00, abs=1e-10)
+
+        assert ha_close.iloc[2] == pytest.approx(1.000, abs=1e-10)
+        assert ha_open.iloc[2] == pytest.approx(1.010, abs=1e-10)
+        assert ha_high.iloc[2] == pytest.approx(1.01, abs=1e-10)
+        assert ha_low.iloc[2] == pytest.approx(0.98, abs=1e-10)
+
+    def test_bullish_flip_detected(self) -> None:
+        ha_open = pd.Series([1.02, 1.00])
+        ha_close = pd.Series([1.00, 1.03])  # bar0 bearish (close<open), bar1 bullish
+        result = heikin_ashi_bullish_flip(ha_open, ha_close)
+        assert result.iloc[0] == False
+        assert result.iloc[1] == True
+
+    def test_bearish_flip_detected(self) -> None:
+        ha_open = pd.Series([1.00, 1.03])
+        ha_close = pd.Series([1.02, 1.00])  # bar0 bullish, bar1 bearish
+        result = heikin_ashi_bearish_flip(ha_open, ha_close)
+        assert result.iloc[0] == False
+        assert result.iloc[1] == True
+
+    def test_no_flip_when_same_direction(self) -> None:
+        ha_open = pd.Series([1.00, 1.00])
+        ha_close = pd.Series([1.02, 1.03])  # both bullish -> no flip
+        result = heikin_ashi_bullish_flip(ha_open, ha_close)
+        assert result.iloc[1] == False
