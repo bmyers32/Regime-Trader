@@ -35,6 +35,17 @@ Future work + ideas outside current phase scope. Phase status lives in CLAUDE.md
 **Why deferred:** Needs Phases 2 + 9. Purely additive; no schema change.
 
 ### Walk-forward automation harness
+**Status: gates 3/4/6 DELIVERED 2026-07-07** (Track 2, HANDOFF.md) —
+`bot/backtest/{param_sweep,walk_forward,stability,monte_carlo,gate_report}.py`,
+validated on synthetic data via `tests/test_validation_defendants.py`'s four
+known-guilt scenarios. Gate 5 (per-regime attribution) intentionally NOT built —
+deferred to Session B reporting per HANDOFF.md. Real per-pair runs still need
+Track 1's cost_model (spread/slippage calibration) before a §5 verdict can be
+reported; the harness itself has no dependency on that data landing. Remaining
+scope for "done": wire a CLI entrypoint (one command: pull real pair data → run
+`run_walk_forward`/`run_stability_sweep`/`run_monte_carlo` → `build_gate_report` →
+`render_text`/persist) once real data exists — the pieces exist, only the wiring
+doesn't yet.
 **Idea:** One CLI command running the full §5 chain (backtest → WFO → stability sweep → per-regime attribution) emitting a single validation-report artifact the Phase 11 gate consumes.
 **Reasoning:** Gates are only as strong as their friction is low; one-command revalidation actually gets run after every tweak.
 **Why deferred:** Needs Phases 4–5. Build immediately after — before playbooks 2–3 so they're validated with it from birth.

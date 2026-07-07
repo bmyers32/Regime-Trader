@@ -106,3 +106,29 @@ near-zero signal probability was the original failure being fixed.
 Applies anywhere a spec lists several conditions under one heading (one score, one
 config block, one validation pass): the implementation must preserve that they trade
 off against each other, not each become an independent kill-switch.
+
+### Test the judge with defendants of known guilt.
+*Phase 5 (Track 2) — TRADING-RULES §5 walk-forward/stability/Monte-Carlo harness*
+A validation harness has no ground truth to check itself against — a strategy backtest
+can be graded against known-good indicator values, but nothing hands you the "correct"
+walk-forward verdict for a real strategy. The fix: build synthetic defendants whose
+guilt or innocence is fixed by construction (a coin-flip process must be unprofitable
+after real costs; a threshold hand-optimized on pure noise must collapse out-of-sample;
+a lucky seed's one realized positive result must fail to survive resampling), then
+require the harness to reach that specific verdict. Two of the four defendants this
+session (overfit-by-construction, cherry-picked lucky seed) needed real calibration —
+the first attempt at the "overfit" defendant produced a uniformly negative grid instead
+of a spurious peak, because real transaction costs swamped the noise signal the test
+was trying to isolate; the "lucky seed" defendant required scanning ~80 seeds for one
+that actually fooled gate 3. If a defendant that should be convicted is acquitted
+instead — or an innocent one is convicted — the fix is never to adjust the test's
+assertion; it's to find what the harness got backwards.
+Ignoring it → specific failure: a walk-forward/stability/Monte-Carlo harness ships with
+only "smoke test" coverage (does it run without crashing), passes code review because
+the code looks reasonable, and then silently rubber-stamps an overfit strategy in
+production because nothing ever proved the harness could convict one.
+Applies anywhere a system's job is to judge other systems and no ground-truth oracle
+exists: anomaly detectors, spam/fraud classifiers, CI flakiness detectors, code-review
+bots, alerting thresholds — build the thing you already know should fail the check,
+and the thing you already know should pass it, before trusting a verdict on the
+unknown case.
