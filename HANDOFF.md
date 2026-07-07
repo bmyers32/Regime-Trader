@@ -1,5 +1,42 @@
-# HANDOFF — 2026-07-07T00:00Z
-Phase: 5 — trend_pullback   Status: IN-PROGRESS
+# HANDOFF — 2026-07-07T00:00Z (Session B close-out, blocked)
+Phase: 5 — trend_pullback   Status: IN-PROGRESS, BLOCKED on Track 1 data sufficiency
+
+## Session B: blocked before gates ran — do not skip ahead
+Session B was kicked off believing Track 1 (spread sampling) had landed. It had not.
+Checked instance/spread_samples.csv on PA: only the ny_overlap bucket has any rows
+(sampler started 2026-07-07 17:01 UTC; asian/london buckets are empty because no
+UTC-asian/london hours have elapsed yet since start). Separately, the task was
+running on an HOURLY cadence (17:01/18:01/19:01), not the intended 2-3min cadence —
+diagnosed and fixed this session (see below). **No gates were run. No cost_model
+PENDING values were filled. TRADING-RULES §5 steps 1-6 from the Session B kickoff
+prompt are all still outstanding.**
+
+**Root cause of the cadence bug:** scripts/sample_spreads.py had no internal loop —
+`sample_once()` fired once and the script exited; cadence was 100% delegated to
+whatever invoked it. PythonAnywhere's Tasks-tab scheduled tasks only support daily
+or hourly recurrence in the UI — there is no minute-level cron there, so "hourly"
+was the finest granularity that mechanism could ever produce, not a misconfiguration
+of an otherwise-capable scheduler.
+
+**Fix applied this session:** scripts/sample_spreads.py now runs as a long-lived
+loop (`run_loop`, `_SAMPLE_INTERVAL_SECONDS=150`) that samples every ~2.5min and
+sleeps between; a `--once` flag preserves the old single-shot behavior for manual
+checks. Per-iteration exceptions are caught and logged (traceback to stdout) so one
+failed OANDA request doesn't kill the whole run. **Not yet deployed** — needs to be
+re-run on PA as an Always-On Task (not a Tasks-tab scheduled task) tonight:
+  1. Kill/delete the existing hourly Tasks-tab entry for sample_spreads.py.
+  2. Create a PA Always-On Task running `python scripts/sample_spreads.py` (no
+     `--once`) from the project's venv/working dir.
+  3. Confirm rows are landing every ~2-3min via `wc -l instance/spread_samples.csv`
+     a few minutes after start, and again the next morning to confirm session-bucket
+     coverage is actually filling in (not just ny_overlap).
+
+**Session B verdict rule for next session:** do not consider Track 1 "landed" on a
+trade/observation-count technicality. Calibration data sufficiency = at least ~100
+observations per session bucket (asian/london/ny_overlap) per pair, across all three
+buckets, before aggregating median spread_pips into instruments.yaml. No synthetic
+or placeholder spread values are an acceptable substitute (TRADING-RULES §1.7) —
+if a bucket is thin when next picked up, wait longer; do not estimate around it.
 
 ## Where things stand
 trend_pullback strategy + BacktestEngine partial/trail exit + near-miss signal funnel
@@ -11,10 +48,12 @@ cost_model calibration status (bot/config/instruments.yaml, all 6 pairs):
   - rollover_pips_per_day: DONE — real OANDA-published rates via
     scripts/fetch_financing_rates.py, run from a PythonAnywhere console (dated
     2026-07-07 in each pair's cost_model.calibration_note).
-  - spread_pips / max_spread_pips: IN PROGRESS — scripts/sample_spreads.py is
-    scheduled hourly on PA (Tasks tab), started 2026-07-07. Needs 2-3 full weekdays
-    to cover all three session buckets (asian/london/ny_overlap) with enough density.
-    Check progress from a PA Bash console: `wc -l instance/spread_samples.csv`.
+  - spread_pips / max_spread_pips: BLOCKED, restarted this session — see "Session B:
+    blocked" above. scripts/sample_spreads.py now supports a proper ~2-3min Always-On
+    Task loop (fix landed, not yet deployed to PA). Needs redeploy tonight, then 2-3
+    full weekdays to cover all three session buckets (asian/london/ny_overlap) with
+    ≥100 observations each. Check progress from a PA Bash console:
+    `wc -l instance/spread_samples.csv`.
   - slippage_pips: NOT DERIVABLE from sample_spreads.py at all — that script measures
     quoted bid/ask spread, not real fill slippage. Needs its own decision once there's
     real fill data (Phase 8's Order.spread_at_entry) or an explicitly-flagged interim
@@ -50,13 +89,19 @@ narration / signature-restating docstrings / stdlib-idiom explanations.
 ## Not done / next action
 Two independent, parallelizable tracks:
 
-**Track 1 (blocked on time, not on work):** spread sampling keeps running hourly on
-PA unattended. Once 2-3 weekdays have accumulated: aggregate instance/
-spread_samples.csv (median spread_pips per instrument/session), paste into
-instruments.yaml, decide slippage_pips, run the RE-BASELINE RULE ceremony already
-written in instruments.yaml (fill -> re-run existing goldens -> expect the shift ->
-re-baseline deliberately with a dated note), then run TRADING-RULES §5 gates 1-6 per
-pair and report a verdict. Only then is Phase 5's exit criteria row satisfiable.
+**Track 1 (blocked on time, not on work — redeploy required first, see Session B
+close-out note at top of file):** scripts/sample_spreads.py's cadence bug is fixed
+in code but the Always-On Task redeploy on PA has NOT happened yet — do that first.
+Once redeployed and 2-3 full weekdays have accumulated with ≥100 observations per
+session bucket per pair (not just the 20-trade-count floor logic from Track 2 —
+this is a separate, stricter sufficiency bar for raw spread samples): aggregate
+instance/spread_samples.csv (median spread_pips per instrument/session), show
+per-pair/per-bucket values with sample counts and flag any thin/anomalous bucket
+BEFORE writing into instruments.yaml, decide slippage_pips, run the RE-BASELINE RULE
+ceremony already written in instruments.yaml (fill -> re-run existing goldens ->
+expect the shift -> re-baseline deliberately with a dated note), then run
+TRADING-RULES §5 gates 1-6 per pair and report a verdict. Only then is Phase 5's
+exit criteria row satisfiable.
 
 **Session B verdict rule (evidence thickness, not just the trade-count floor):**
 `default_gate3_pass_fn`'s `min_trade_count=20` is a hard floor, not evidence that a
@@ -176,7 +221,13 @@ only, NOT source or string corruption (the underlying string is correct UTF-8,
 this note exists so nobody burns time chasing a phantom encoding bug in report text
 when wiring the /backtests dashboard page.
 
-## Files touched (this session)
+## Files touched (Session B close-out, this pass)
+  - `scripts/sample_spreads.py` (fixed: added `run_loop`/`_SAMPLE_INTERVAL_SECONDS`
+    for Always-On Task use; `--once` flag preserves prior single-shot behavior;
+    not yet redeployed to PA)
+  - `HANDOFF.md` (this file — blocked status, cadence-bug diagnosis, redeploy steps)
+
+## Files touched (Track 2 session, prior pass)
   - `bot/backtest/param_sweep.py` (new)
   - `bot/backtest/walk_forward.py` (new)
   - `bot/backtest/stability.py` (new)
@@ -206,3 +257,9 @@ when wiring the /backtests dashboard page.
   - Do not silently fill cost_model with published-typical or placeholder numbers.
   - Do not report any TRADING-RULES §5 gate as PASS/FAIL until real costs are in.
   - Do not add breakeven_after_partial=True as a default without a validated reason.
+  - Do not treat Track 1 as "landed" on the presence of a file or a nonzero row
+    count alone — require ≥100 observations per session bucket per pair across all
+    three buckets (asian/london/ny_overlap) before aggregating into instruments.yaml.
+  - Do not schedule sample_spreads.py (or any sub-hourly-cadence script) via PA's
+    Tasks tab — that UI's finest recurrence is hourly. Use an Always-On Task with
+    an internal sleep loop instead (see run_loop in the script).
