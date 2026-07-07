@@ -33,6 +33,40 @@ defaults:
     regime_confirm_bars: 2       # consecutive anchor candles to confirm a regime switch (§2 law)
     regime_min_hold_bars: 4      # min bars in regime before exit allowed (bypassed for EXPANSION entry)
 
+  # trend_pullback strategy params (Phase 5, bot/strategies/trend_pullback.py).
+  # TRENDING-only playbook: pulls back to the EMA20-EMA50 zone, needs ONE reversal
+  # trigger (engulfing OR >=60%-body close OR Heikin-Ashi flip) + RSI on the trend's
+  # side, vetoed if the pullback has broken beyond EMA200. SL = ATR-multiple vs recent
+  # swing extreme (whichever is farther/more protective). No fixed TP — exit is
+  # partial-at-1R + ATR/Chandelier trail on the remainder (bot/backtest/engine.py
+  # exit_cfg), per TRADING-RULES §3.1.
+  #
+  # PROVISIONAL (2026-07-06): implements §3.1's prose spec with reasonable defaults.
+  # NOT yet empirically validated — entry_threshold/score_weights/sl_atr_mult/
+  # trail_atr_mult all need Session B's walk-forward + parameter-stability sweep
+  # (TRADING-RULES §5 gates 3-4) once real cost_model values exist (see cost_model's
+  # RE-BASELINE RULE below — same blocking dependency). Do not treat as ship-ready;
+  # see HANDOFF.md Session A Decision 1/2 for the full reasoning.
+  trend_pullback_params:
+    rsi_period: 14
+    pullback_zone_atr_min: 0.25   # tighter proximity to EMA20-EMA50 zone scores higher
+    pullback_zone_atr_max: 0.5    # beyond this distance from the zone -> veto (outside_pullback_zone)
+    sl_atr_mult: 1.75             # midpoint of §3.1's 1.5-2x ATR range
+    swing_lookback_bars: 10       # recent swing extreme considered alongside the ATR-mult SL
+    entry_threshold: 0.6          # confidence_score >= this AND no vetoes -> fires
+    score_weights:                # must sum to 1.0; provisional, see calibration_note above
+      pullback_zone: 0.3
+      reversal_trigger: 0.25
+      rsi_side: 0.25
+      ema200_side: 0.2            # §3.1 scores pullback-depth-vs-EMA200, not a hard gate — see
+                                   # bot/strategies/trend_pullback.py's _ema200_side_score docstring
+    exit:
+      partial_fraction: 0.5       # fraction of units closed at partial_at_r
+      partial_at_r: 1.0           # R-multiple (of the original ATR-mult stop distance) that triggers the partial
+      breakeven_after_partial: false  # NOT in §3.1 — must earn its way in via walk-forward, never a silent default
+      trail_atr_period: 22        # standard Chandelier Exit ATR period
+      trail_atr_mult: 3.0         # standard Chandelier Exit multiplier
+
   # Cost model (Phase 4, bot/backtest/costs.py + sizing.py). No shared defaults here —
   # per TRADING-RULES §1.7 every threshold ships with a calibration note, and spread/
   # rollover are pair-specific by nature (GBP/JPY spreads nothing like EUR/USD). Each
@@ -89,6 +123,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -97,18 +137,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: 1.063
+        short: -2.31602
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
@@ -148,6 +192,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -156,18 +206,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: -0.77709
+        short: 0.141
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
@@ -207,6 +261,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -215,18 +275,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: 0.80272
+        short: -1.71188
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
@@ -265,6 +329,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -273,18 +343,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: -0.37053
+        short: -0.37787
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
@@ -324,6 +398,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -332,18 +412,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: -0.08946
+        short: -0.30264
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
@@ -384,6 +468,12 @@ instruments:
       bb_compression_window:
         value: 100
         pass_rate: pending_phase4_backtest
+    trend_pullback_calibration:
+      calibration_note: >
+        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
+        Session B: real cost_model values must land first (see cost_model.
+        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
+        any per-pair override or ship-readiness claim.
     cost_model:
       spread_pips:
         asian: null
@@ -392,18 +482,22 @@ instruments:
       max_spread_pips: null
       slippage_pips: null
       rollover_pips_per_day:
-        long: null
-        short: null
+        long: -0.59439
+        short: 0.0936
       calibration_note: >
-        PENDING — do not fill with published-typical numbers (TRADING-RULES §1.7).
-        spread_pips/max_spread_pips/slippage_pips: seed via scripts/sample_spreads.py
-        (OANDA PricingInfo) across sessions for a day+. rollover_pips_per_day: seed via
-        scripts/fetch_financing_rates.py (OANDA AccountInstruments financing.longRate/
-        shortRate, converted to daily pips) — a real broker-published rate, not a guess.
-        After Phase 8 ships, Order.spread_at_entry in the journal becomes the ongoing
-        spread recalibration source. Filling these in will shift any Phase 5+ golden-run/
-        walk-forward baseline that reads them — see RE-BASELINE RULE above.
-        LIMITATION (2026-07-06): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
+        PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
+        scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
+        financing.longRate/shortRate, converted to daily pips) — a real broker-published
+        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
+        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
+        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
+        requires a multi-day run and has not happened yet. After Phase 8 ships,
+        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
+        source. Filling the remaining PENDING values in will shift any Phase 5+
+        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
+        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
+        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
         financing rates drift over time (they track central-bank policy rates, which
