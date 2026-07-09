@@ -36,7 +36,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from bot.backtest.costs import apply_entry_cost, apply_exit_cost, rollover_cost_pips, spread_gate_ok
+from bot.backtest.costs import (
+    apply_entry_cost,
+    apply_exit_cost,
+    entry_blackout_ok,
+    rollover_cost_pips,
+    spread_gate_ok,
+)
 from bot.backtest.results import (
     BacktestResult,
     BacktestTrade,
@@ -204,6 +210,8 @@ class BacktestEngine:
     ) -> dict | None:
         bar_time = next_bar["time"]
         if not spread_gate_ok(self._cost_cfg, bar_time):
+            return None
+        if not entry_blackout_ok(self._cost_cfg, bar_time):
             return None
 
         filled = apply_entry_cost(

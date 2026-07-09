@@ -75,8 +75,13 @@ defaults:
   #   spread_pips: session-bucketed (asian/london/ny_overlap UTC-hour buckets, see
   #     bot.backtest.costs.session_for_hour) — a single average under/over-charges
   #     half the trading day.
-  #   max_spread_pips: entry gate — backtester AND (Phase 8) live executor refuse
-  #     entries when the current session spread exceeds this, same threshold both places.
+  #   max_spread_pips: entry gate, session-bucketed like spread_pips (Session B,
+  #     2026-07-09) — a single flat ceiling sized to the widest bucket (asian) would be
+  #     systematically loose in the tighter london/ny_overlap sessions, so "abnormal
+  #     spread" is judged relative to the session actually being traded. Backtester AND
+  #     (Phase 8) live executor refuse entries when the CURRENT session's spread exceeds
+  #     THAT session's threshold — same bot.backtest.costs.spread_gate_ok function both
+  #     places, not a reimplementation.
   #   slippage_pips: charged on market entries and SL exits; doubled on SL exits when
   #     the regime at exit is EXPANSION; never charged on TP fills.
   #   rollover_pips_per_day.long/short: per-unit cost applied once per UTC-day
@@ -125,17 +130,23 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. NOT RUN
+        (2026-07-09 disposition): EUR_USD/USD_JPY both FAILED TRADING-RULES §5
+        gates 3/4/6 decisively under this same spec (see ROADMAP.md's
+        "trend_pullback H1 post-mortem"), so running the remaining pairs against
+        the identical spec is not expected to be informative. Revisit only if
+        the playbook is redefined (new edge thesis), not standalone.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 3.9
+        london: 3.5
+        ny_overlap: 3.6
+      max_spread_pips:
+        asian: 4.4
+        london: 3.9
+        ny_overlap: 3.9
+      slippage_pips: 0.92
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: 1.063
         short: -2.31602
@@ -143,15 +154,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -162,6 +165,42 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 17.35 pips vs ~3.9 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (34.9).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (3.7) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.
 
   EUR_USD:
     enabled: false
@@ -194,17 +233,26 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. TESTED
+        2026-07-09 (Session B): TRADING-RULES §5 gates 3/4/6 run twice (original
+        code, then again after a law-drift fix restoring §3.1's zone/trigger/rsi
+        to scored, non-veto components) — FAILED both times, both structures.
+        Decisive failure (gate 4 found no profitable parameter neighborhood; gate
+        6 bootstrap found the negative result robust, P(net_pnl<=0) 86.8-100%
+        across all four pair/structure combinations run). See ROADMAP.md's
+        "trend_pullback H1 post-mortem" and HANDOFF.md's 2026-07-09 section for
+        full numbers. Not ship-ready; do not enable.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 1.6
+        london: 1.6
+        ny_overlap: 1.6
+      max_spread_pips:
+        asian: 1.7
+        london: 1.7
+        ny_overlap: 1.7
+      slippage_pips: 0.40
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: -0.77709
         short: 0.141
@@ -212,15 +260,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -231,6 +271,42 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 3.10 pips vs 1.6 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (10.0).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (1.6) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.
 
   USD_JPY:
     enabled: false
@@ -263,17 +339,26 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. TESTED
+        2026-07-09 (Session B): TRADING-RULES §5 gates 3/4/6 run twice (original
+        code, then again after a law-drift fix restoring §3.1's zone/trigger/rsi
+        to scored, non-veto components) — FAILED both times, both structures.
+        Decisive failure (gate 4 found no profitable parameter neighborhood; gate
+        6 bootstrap found the negative result robust, P(net_pnl<=0) 86.8-100%
+        across all four pair/structure combinations run). See ROADMAP.md's
+        "trend_pullback H1 post-mortem" and HANDOFF.md's 2026-07-09 section for
+        full numbers. Not ship-ready; do not enable.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 1.6
+        london: 1.5
+        ny_overlap: 1.5
+      max_spread_pips:
+        asian: 1.8
+        london: 1.7
+        ny_overlap: 1.8
+      slippage_pips: 0.40
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: 0.80272
         short: -1.71188
@@ -281,15 +366,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -300,6 +377,42 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 4.10 pips vs 1.6 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (10.0).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (1.6) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.
 
   GBP_USD:
     enabled: false
@@ -331,17 +444,23 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. NOT RUN
+        (2026-07-09 disposition): EUR_USD/USD_JPY both FAILED TRADING-RULES §5
+        gates 3/4/6 decisively under this same spec (see ROADMAP.md's
+        "trend_pullback H1 post-mortem"), so running the remaining pairs against
+        the identical spec is not expected to be informative. Revisit only if
+        the playbook is redefined (new edge thesis), not standalone.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 1.9
+        london: 1.9
+        ny_overlap: 1.9
+      max_spread_pips:
+        asian: 2.2
+        london: 2.0
+        ny_overlap: 2.0
+      slippage_pips: 0.48
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: -0.37053
         short: -0.37787
@@ -349,15 +468,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -368,6 +479,42 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 7.90 pips vs 1.9 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (15.9).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (1.9) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.
 
   AUD_USD:
     enabled: false
@@ -400,17 +547,23 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. NOT RUN
+        (2026-07-09 disposition): EUR_USD/USD_JPY both FAILED TRADING-RULES §5
+        gates 3/4/6 decisively under this same spec (see ROADMAP.md's
+        "trend_pullback H1 post-mortem"), so running the remaining pairs against
+        the identical spec is not expected to be informative. Revisit only if
+        the playbook is redefined (new edge thesis), not standalone.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 1.3
+        london: 1.3
+        ny_overlap: 1.3
+      max_spread_pips:
+        asian: 1.5
+        london: 1.4
+        ny_overlap: 1.4
+      slippage_pips: 0.32
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: -0.08946
         short: -0.30264
@@ -418,15 +571,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -437,6 +582,42 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 4.55 pips vs 1.3 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (15.0).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (1.3) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.
 
   EUR_GBP:
     enabled: false
@@ -470,17 +651,23 @@ instruments:
         pass_rate: pending_phase4_backtest
     trend_pullback_calibration:
       calibration_note: >
-        Uses defaults.trend_pullback_params — no per-pair override yet. Pending
-        Session B: real cost_model values must land first (see cost_model.
-        calibration_note below), then TRADING-RULES §5 gates 1-6 run per pair before
-        any per-pair override or ship-readiness claim.
+        Uses defaults.trend_pullback_params — no per-pair override. NOT RUN
+        (2026-07-09 disposition): EUR_USD/USD_JPY both FAILED TRADING-RULES §5
+        gates 3/4/6 decisively under this same spec (see ROADMAP.md's
+        "trend_pullback H1 post-mortem"), so running the remaining pairs against
+        the identical spec is not expected to be informative. Revisit only if
+        the playbook is redefined (new edge thesis), not standalone.
     cost_model:
       spread_pips:
-        asian: null
-        london: null
-        ny_overlap: null
-      max_spread_pips: null
-      slippage_pips: null
+        asian: 1.4
+        london: 1.4
+        ny_overlap: 1.3
+      max_spread_pips:
+        asian: 1.6
+        london: 1.5
+        ny_overlap: 1.5
+      slippage_pips: 0.35
+      entry_blackout_hours_utc: [21]
       rollover_pips_per_day:
         long: -0.59439
         short: 0.0936
@@ -488,15 +675,7 @@ instruments:
         PARTIALLY FILLED (2026-07-07): rollover_pips_per_day sourced from
         scripts/fetch_financing_rates.py run on PythonAnywhere (OANDA AccountInstruments
         financing.longRate/shortRate, converted to daily pips) — a real broker-published
-        rate, not a guess. spread_pips/max_spread_pips/slippage_pips remain PENDING —
-        do not fill with published-typical numbers (TRADING-RULES §1.7); seed via
-        scripts/sample_spreads.py (OANDA PricingInfo) across sessions for a day+, which
-        requires a multi-day run and has not happened yet. After Phase 8 ships,
-        Order.spread_at_entry in the journal becomes the ongoing spread recalibration
-        source. Filling the remaining PENDING values in will shift any Phase 5+
-        golden-run/walk-forward baseline that reads this cost_model — see RE-BASELINE
-        RULE above; that ceremony has NOT run yet (Session B, once spread_pips also
-        lands) — do not treat rollover alone as sufficient for a §5 gate verdict.
+        rate, not a guess.
         LIMITATION (2026-07-07): rollover_pips_per_day is a snapshot — fetch_financing_rates.py
         reads OANDA's CURRENT published rate once and that single value is then applied
         as a constant across the entire historical backtest window, even though real
@@ -507,3 +686,39 @@ instruments:
         typical hold times); revisit if Phase 11 forward-vs-backtest divergence
         implicates rollover specifically, or before running a strategy whose edge
         depends on very long holds.
+        FILLED (2026-07-09, Session B): spread_pips/max_spread_pips/slippage_pips/
+        entry_blackout_hours_utc sourced from instance/spread_samples.csv, sample
+        window 2026-07-07T17:01Z-2026-07-09T14:56Z (OANDA PricingInfo via
+        scripts/sample_spreads.py). Per-bucket sample counts this pair: asian=478
+        (430 after excluding hour-21 UTC), london=176, ny_overlap=295 — all clear
+        the >=100-observations-per-bucket sufficiency bar; london is the thinnest
+        leg (~1.5 sessions of coverage) — FLAGGED for re-sampling enrichment next
+        time the sampler runs, not disqualifying now. Two PA DNS outage gaps during
+        this window (~09:08-11:11 and ~11:35-12:42 UTC, 2026-07-08) caused sampler
+        poll failures but no corrupt rows; the Always-On loop survived both.
+        spread_pips = per-bucket median; london/ny_overlap use the raw bucket
+        median/p90 as sampled. asian's median AND max_spread_pips-source p90 are
+        computed with hour-21 UTC EXCLUDED: that single hour carries a recurring
+        spread blowout coincident with OANDA's daily rollover print (this pair's
+        hour-21 median spread = 5.65 pips vs 1.4 every other asian hour), and the
+        asian bucket's 10 UTC-hour span means that one hour is ~10% of the bucket —
+        almost exactly the p90 cutoff, so leaving it in would have still leaked
+        rollover-artifact width into the gate even after moving off raw max (11.5).
+        entry_blackout_hours_utc: [21] is new and refuses NEW entries during that
+        hour in both backtest (bot.backtest.costs.entry_blackout_ok, wired into
+        BacktestEngine._try_open_position) and live (Phase 8, same function) —
+        without it the backtest would model fills during a spread condition the
+        live gate would never see, since max_spread_pips no longer reflects that
+        hour's true cost. max_spread_pips is ALSO session-bucketed (asian/london/
+        ny_overlap), not one flat ceiling — a flat gate sized to the widest bucket
+        would be systematically loose in the tighter sessions; asian's own
+        threshold uses the hour-21-excluded p90 for the same reason its median
+        does. PHASE 8 CONTRACT (also recorded in HANDOFF.md): the live executor
+        must call bot.backtest.costs.spread_gate_ok and entry_blackout_ok
+        directly against this same cost_model — no reimplementation of either
+        gate in the live path. slippage_pips = 0.25 x this pair's pooled (all-session,
+        count-weighted) median spread_pips (1.4) — an explicit INTERIM methodology,
+        not a measurement: no real fill data exists yet (Phase 8 not built). Replace
+        with journal.Order.spread_at_entry-derived slippage once Phase 8 ships.
+        RE-BASELINE RULE above has now been run for this pair — see HANDOFF.md
+        Session B for the golden/walk-forward re-run record.

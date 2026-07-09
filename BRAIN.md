@@ -132,3 +132,49 @@ exists: anomaly detectors, spam/fraud classifiers, CI flakiness detectors, code-
 bots, alerting thresholds — build the thing you already know should fail the check,
 and the thing you already know should pass it, before trusting a verdict on the
 unknown case.
+
+### A clean FAIL with reasons is a deliverable.
+*Phase 5 (Session B) — trend_pullback §5 gates 2-6, EUR_USD/USD_JPY, 2026-07-09*
+A validation gate's job is to produce a trustworthy verdict, not a passing one. Both
+pairs failed all three gates this session — walk-forward net_pnl negative, no
+profitable stability peak to test, Monte Carlo confirming the negative result isn't a
+shuffling artifact — and every failure carries its own numbers, thresholds, and a
+diagnostic trail (evaluation funnel, score distribution, regime attribution) explaining
+why. That IS the deliverable: not "ship" or "don't ship," but a documented, falsifiable
+account the next session can act on without re-deriving it. Treating a FAIL as an
+unfinished task invites the exact failure mode TRADING-RULES §5 exists to prevent:
+re-running with tweaked params until something passes, at which point the "pass" was
+manufactured, not discovered.
+Ignoring it → specific failure: a session chases a PASS by nudging thresholds/params
+after a real FAIL, shipping a strategy that looks validated on paper but was actually
+parameter-hunted against the same historical noise the walk-forward split existed to
+guard against — TRADING-RULES §1.7's "always-true filter" failure mode wearing
+different clothes.
+Applies anywhere a check's purpose is to be honest, not agreeable: code review, test
+suites, security audits, hiring bars — a rejection with a clear, evidenced reason is
+the process working, not the process failing to produce the "right" answer.
+
+### Tests assert what is, not what the law says.
+*Phase 5 (Session B) — trend_pullback's zone/trigger/rsi veto drift, 2026-07-09*
+Three unit tests (test_rsi_wrong_side_veto, test_no_reversal_trigger_veto,
+test_outside_pullback_zone_veto) asserted that specific score components appeared in
+Signal.vetoes — a faithful, green description of what the code did, and a direct
+contradiction of TRADING-RULES §3.1, which lists all three under "Score:", never
+"Hard gates:". The tests were written by observing the implementation and codifying
+it, not by deriving the expectation independently from the spec. That inversion is
+what let three separate AND-stack reintroductions (TRADING-RULES §1.1's exact failure
+mode) ship green for an unknown number of sessions: the tests didn't just fail to
+catch the drift, they actively defended it — a future attempt to fix the code would
+see "passing tests break" and read that as evidence the fix was wrong, when the tests
+were the thing wrong all along. The empirical funnel that finally surfaced it (gates
+passed = 3-4% of consulted, fired==gates_passed exactly) came from a real backtest,
+not from this test suite — the suite was blind to its own drift by construction.
+Ignoring it → specific failure: a test suite that encodes "whatever the code
+currently does" instead of "what the spec says it should do" turns green coverage into
+a moat protecting bugs from correction — every future fix attempt looks like a
+regression until someone re-derives intent from the spec and inverts the assertions.
+Applies anywhere a test is written by running the code and asserting the output,
+rather than by reading the spec/contract first and asserting what SHOULD happen:
+snapshot tests taken during a bug, API contract tests written against a buggy client,
+golden files regenerated to match broken output — the fastest way to write a test that
+can never fail is to let broken behavior write its own assertion.

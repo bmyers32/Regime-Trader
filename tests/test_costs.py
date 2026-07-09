@@ -23,6 +23,7 @@ from bot.backtest.costs import (
     apply_entry_cost,
     apply_exit_cost,
     current_spread_pips,
+    entry_blackout_ok,
     rollover_cost_pips,
     rollover_crossings,
     session_for_hour,
@@ -36,7 +37,7 @@ def _ts(*args) -> datetime:
 
 _CFG = {
     "spread_pips": {"asian": 3.0, "london": 1.0, "ny_overlap": 1.5},
-    "max_spread_pips": 2.0,
+    "max_spread_pips": {"asian": 2.0, "london": 1.5, "ny_overlap": 2.0},
     "slippage_pips": 0.5,
     "rollover_pips_per_day": {"long": -0.3, "short": 0.1},
 }
@@ -65,19 +66,58 @@ def test_session_bucketing_covers_all_hours():
 # ---------------------------------------------------------------------------
 
 def test_spread_gate_ok_under_threshold():
-    # london bucket = 1.0 pips, max = 2.0 -> ok
+    # london bucket = 1.0 pips, max_london = 1.5 -> ok
     assert spread_gate_ok(_CFG, _ts(2024, 1, 1, 9)) is True
 
 
 def test_spread_gate_refuses_over_threshold():
-    # asian bucket = 3.0 pips, max = 2.0 -> refused
+    # asian bucket = 3.0 pips, max_asian = 2.0 -> refused
     assert spread_gate_ok(_CFG, _ts(2024, 1, 1, 2)) is False
+
+
+def test_spread_gate_is_session_bucketed_not_flat():
+    """
+    Session B (2026-07-09): max_spread_pips is bucketed like spread_pips, not one flat
+    ceiling — a gate sized to the widest bucket (asian) would be systematically loose in
+    every tighter one. Same 1.8-pip spread in all three sessions; only the gate differs.
+    """
+    cfg = {**_CFG, "spread_pips": {"asian": 1.8, "london": 1.8, "ny_overlap": 1.8}}
+    assert spread_gate_ok(cfg, _ts(2024, 1, 1, 2)) is True    # asian:      1.8 <= 2.0
+    assert spread_gate_ok(cfg, _ts(2024, 1, 1, 9)) is False   # london:     1.8 >  1.5
+    assert spread_gate_ok(cfg, _ts(2024, 1, 1, 15)) is True   # ny_overlap: 1.8 <= 2.0
 
 
 def test_current_spread_pips_by_session():
     assert current_spread_pips(_CFG, _ts(2024, 1, 1, 2)) == pytest.approx(3.0)   # asian
     assert current_spread_pips(_CFG, _ts(2024, 1, 1, 9)) == pytest.approx(1.0)   # london
     assert current_spread_pips(_CFG, _ts(2024, 1, 1, 15)) == pytest.approx(1.5)  # ny_overlap
+
+
+# ---------------------------------------------------------------------------
+# EC-2b entry blackout hours (Session B: rollover-hour cost artifact, TRADING-RULES §5.2)
+# ---------------------------------------------------------------------------
+
+def test_entry_blackout_absent_key_defaults_to_no_blackout():
+    # _CFG has no entry_blackout_hours_utc key at all -> every hour allowed (additive
+    # gate; pre-existing inline cost dicts must be unaffected, HANDOFF re-baseline rule)
+    for h in range(24):
+        assert entry_blackout_ok(_CFG, _ts(2024, 1, 1, h)) is True
+
+
+def test_entry_blackout_refuses_listed_hour():
+    cfg = {**_CFG, "entry_blackout_hours_utc": [21]}
+    assert entry_blackout_ok(cfg, _ts(2024, 1, 1, 21)) is False
+
+
+def test_entry_blackout_allows_other_hours():
+    cfg = {**_CFG, "entry_blackout_hours_utc": [21]}
+    assert entry_blackout_ok(cfg, _ts(2024, 1, 1, 20)) is True
+    assert entry_blackout_ok(cfg, _ts(2024, 1, 1, 22)) is True
+
+
+def test_zero_cost_model_has_no_blackout_hours():
+    for h in range(24):
+        assert entry_blackout_ok(ZERO_COST_MODEL, _ts(2024, 1, 1, h)) is True
 
 
 # ---------------------------------------------------------------------------

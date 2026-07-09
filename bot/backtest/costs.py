@@ -29,11 +29,26 @@ a fabricated rate would be worse than an honest zero.
 
 cost_cfg is a plain dict (same pattern as RegimeClassifier's params dict) with keys:
   spread_pips: {"asian": float, "london": float, "ny_overlap": float}
-  max_spread_pips: float
+  max_spread_pips: {"asian": float, "london": float, "ny_overlap": float} — session-
+    bucketed like spread_pips, not a single flat number: a gate sized to the widest
+    bucket is systematically loose in every tighter one, so "abnormal spread" must be
+    judged relative to the session actually being traded (Session B, 2026-07-09).
   slippage_pips: float
   rollover_pips_per_day: {"long": float, "short": float}
+  entry_blackout_hours_utc: list[int] (optional, default [] via .get() — see below)
 Callers are responsible for resolving instruments.yaml's PENDING (null) placeholders
 into real numbers before use — this module does no config loading of its own.
+
+entry_blackout_hours_utc refuses NEW entries during specific UTC hours where sampled
+spread data shows a recurring cost artifact too sharp for the session-bucket median/p90
+to represent honestly (Session B calibration: hour 21 UTC shows a daily spread blowout
+across all 6 pairs coincident with OANDA's rollover print, e.g. GBP/JPY's asian-bucket
+median jumping from ~3.9 to ~17.35 pips for that hour alone). Modeling this hour at the
+bucket's ambient cost would let the backtester take trades the live spread gate would
+never see fill at that price, and gating it only live (not in the backtest) would do
+the opposite — bake in a backtest/live divergence either way. Read via `.get(..., [])`
+so cost_cfg dicts without the key (all pre-existing inline test dicts) are unaffected —
+this is a fresh, additive gate, not a retroactive change to spread_gate_ok's behavior.
 """
 
 from __future__ import annotations
@@ -46,9 +61,10 @@ ROLLOVER_HOUR_UTC = 22
 
 ZERO_COST_MODEL: dict = {
     "spread_pips": {"asian": 0.0, "london": 0.0, "ny_overlap": 0.0},
-    "max_spread_pips": float("inf"),
+    "max_spread_pips": {"asian": float("inf"), "london": float("inf"), "ny_overlap": float("inf")},
     "slippage_pips": 0.0,
     "rollover_pips_per_day": {"long": 0.0, "short": 0.0},
+    "entry_blackout_hours_utc": [],
 }
 
 
@@ -67,8 +83,24 @@ def current_spread_pips(cost_cfg: dict, bar_time: datetime) -> float:
 
 
 def spread_gate_ok(cost_cfg: dict, bar_time: datetime) -> bool:
-    """False when the current session spread exceeds max_spread_pips — refuse entry."""
-    return current_spread_pips(cost_cfg, bar_time) <= cost_cfg["max_spread_pips"]
+    """False when the current session spread exceeds THAT SESSION's max_spread_pips —
+    refuse entry. Session-bucketed on both sides of the comparison (not spread vs. a
+    single flat ceiling): a gate calibrated to the widest bucket would be systematically
+    loose in every tighter one, letting through spreads that session's own history says
+    are abnormal.
+    """
+    session = session_for_hour(bar_time.hour)
+    return current_spread_pips(cost_cfg, bar_time) <= cost_cfg["max_spread_pips"][session]
+
+
+def entry_blackout_ok(cost_cfg: dict, bar_time: datetime) -> bool:
+    """False when bar_time's UTC hour is in entry_blackout_hours_utc — refuse entry.
+
+    Same backtest/live path as spread_gate_ok (Prime Directive 7): whatever hours are
+    listed here are refused identically in both, so the backtest can never model a fill
+    the live gate would not have allowed.
+    """
+    return bar_time.hour not in cost_cfg.get("entry_blackout_hours_utc", [])
 
 
 def apply_entry_cost(

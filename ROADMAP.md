@@ -67,6 +67,39 @@ Does SignalLog/Order need a "partial" status distinct from "filled"?
 during Phase 5 (HANDOFF.md 2026-07-06 Session A, Decision 1e) so it isn't rediscovered
 cold when Phase 8 starts.
 
+### trend_pullback H1 post-mortem (CLOSED 2026-07-09 — do not revive with a parameter change)
+**Verdict:** FAILED TRADING-RULES §5 gates 3/4/6 on both tested pairs (EUR_USD,
+USD_JPY), TWICE — once on the as-shipped code (which had an undetected law drift:
+3 of 4 §3.1 score components were wired as hard vetoes, reintroducing the §1.1
+AND-stack anti-pattern), and again after that drift was fixed and the corrected,
+spec-compliant structure was evaluated on its own real merits (entry_threshold/
+score_weights searched inside the walk-forward per window, real >=2yr H1/H4 OANDA
+data, real cost_model). Trade count roughly doubled post-fix (61->127 EUR_USD,
+48->115 USD_JPY) but net_pnl got WORSE, not better — the AND-stack was genuinely
+suppressing volume as hypothesized, and the larger, honestly-scored sample still
+shows no edge net of costs.
+**Reasoning it's closed, not iterated:** gate 4 found no profitable parameter
+neighborhood in either pair post-fix (base_metric negative across all 24 stability
+perturbations, both pairs); gate 6's bootstrap found the negative result robust,
+not a resampling artifact (P(net_pnl<=0) 86.8%-100% across all four pair/structure
+combinations run this session). This is a decisive structural failure, not a
+marginal or cost-sensitive one.
+**Re-entry condition:** any future revival MUST propose a DIFFERENT edge thesis —
+new trigger/zone definitions, a different regime-routing dependency, a different
+exit model, etc. — not a parameter change on the existing §3.1 spec (entry_threshold/
+score_weights/sl_atr_mult retuning was already effectively explored via this
+session's per-window grid search and did not help). Enters via PROMPTS.md §5.7
+(hypothesis stated up front, blast radius, implementation, re-validation) like any
+other strategy change.
+**Untested pairs:** GBP_USD, AUD_USD, EUR_GBP, GBP_JPY were never run under this
+spec (see HANDOFF.md's 2026-07-09 disposition for why, incl. a correction to the
+initial cost-ranking rationale — AUD_USD/EUR_GBP are actually cheaper than the two
+tested pairs, not more expensive; the skip rests on the FAIL's decisiveness, not on
+their cost economics). Revisit only alongside a redefined playbook, not standalone.
+**Where the detail lives:** full gate numbers, veto breakdown, funnel diagnostics,
+and the law-drift audit are archived in the "Phase 5 complete" commit message
+(2026-07-09) — `git log --grep "Phase 5 complete"` — not reproduced here.
+
 ### Compression-within-trend signal flag
 **Idea:** When TRENDING regime fires and BB width is simultaneously below its rolling percentile, pass a `compression_flag=True` into the SignalLog indicator_snapshot. The trend_pullback strategy can optionally tighten its score threshold when the flag is set, favouring only the highest-confidence pullback entries.
 **Reasoning:** During Phase 3, the classifier priority debate revealed that TRENDING and COMPRESSION can be simultaneously true — the classifier resolves the conflict by picking TRENDING, but the compression state carries information. A pullback within a compressed trend tends to resolve sharply in the trend direction, making it a potentially tighter entry.

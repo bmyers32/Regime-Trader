@@ -20,6 +20,22 @@ independent of any Strategy) and blackout is a TRADING-RULES §4 Risk Invariant 
 layer enforces; strategies cannot override") — Phase 8 scope. The Strategy Protocol
 signature (window, regime) has no calendar hook by design; do not add one here.
 
+FIXED (2026-07-09, Session B law-drift audit): pullback_zone/reversal_trigger/rsi_side
+previously appended a veto string to Signal.vetoes whenever their score was 0, on top
+of already scoring 0 for that component — an unconditional no-fire layered on TOP of
+the weighted score, exactly the §1.1 AND-stack anti-pattern this playbook's "2-3 hard
+gates + weighted confluence score" design exists to prevent. Only ema200_side was
+already correctly veto-free (see _ema200_side_score's docstring, which explains why —
+that fix predates this one and was scoped too narrowly the first time). Empirical
+proof this mattered: a real-data walk-forward run measured gates_passed (no vetoes) at
+3-4% of consulted evaluations across two pairs, with fired==gates_passed EXACTLY in
+both — the confidence-score threshold never once bound independently; three hidden
+hard gates were doing 100% of the selection work. All four score components are now
+uniform (score, reason) 2-tuples; vetoes is now structurally ALWAYS empty for this
+strategy — regime-routing (the early `return None` below) is the only hard gate this
+strategy itself applies, matching §3.1's letter exactly. See HANDOFF.md's law-drift
+audit section for the full numbers.
+
 Exit: SL only (tp=None) — ATR-multiple vs. the recent swing extreme, whichever is
 farther (more protective). No fixed TP: the partial-at-1R + ATR/Chandelier trail
 described in §3.1 is a generic BacktestEngine capability (exit_cfg), not something
@@ -84,29 +100,23 @@ class TrendPullback:
         last_close = close.iloc[-1]
 
         reasons: list[str] = []
-        vetoes: list[str] = []
+        vetoes: list[str] = []  # always empty for this strategy — regime-routing (above)
+        # is the only hard gate it applies (TRADING-RULES §3.1); spread/blackout are
+        # engine-level. Kept on Signal for the Strategy/Signal contract (other
+        # playbooks may have real vetoes).
 
-        pullback_score, zone_veto, zone_reason = self._pullback_zone_score(
+        pullback_score, zone_reason = self._pullback_zone_score(
             last_close, ema20, ema50, atr_now, p
         )
-        if zone_veto:
-            vetoes.append(zone_veto)
-        if zone_reason:
-            reasons.append(zone_reason)
+        reasons.append(zone_reason)
 
-        trigger_score, trigger_veto, trigger_reason = self._reversal_trigger_score(
+        trigger_score, trigger_reason = self._reversal_trigger_score(
             open_, high, low, close, direction
         )
-        if trigger_veto:
-            vetoes.append(trigger_veto)
-        if trigger_reason:
-            reasons.append(trigger_reason)
+        reasons.append(trigger_reason)
 
-        rsi_score, rsi_veto, rsi_reason = self._rsi_side_score(rsi_now, direction)
-        if rsi_veto:
-            vetoes.append(rsi_veto)
-        if rsi_reason:
-            reasons.append(rsi_reason)
+        rsi_score, rsi_reason = self._rsi_side_score(rsi_now, direction)
+        reasons.append(rsi_reason)
 
         ema200_score, ema200_reason = self._ema200_side_score(last_close, ema200, direction)
         reasons.append(ema200_reason)
@@ -140,13 +150,18 @@ class TrendPullback:
     @staticmethod
     def _pullback_zone_score(
         last_close: float, ema20: float, ema50: float, atr_now: float, p: dict
-    ) -> tuple[float, str | None, str | None]:
-        """§3.1 score component: proximity to the EMA20-EMA50 pullback zone."""
+    ) -> tuple[float, str]:
+        """
+        §3.1 score component: proximity to the EMA20-EMA50 pullback zone. Uniform
+        (score, reason) 2-tuple matching _ema200_side_score's pattern (FIXED
+        2026-07-09 — see module docstring): a bar outside the zone scores 0 and
+        says why via `reason`, it never appends to Signal.vetoes.
+        """
         zone_lo, zone_hi = min(ema20, ema50), max(ema20, ema50)
         if zone_lo <= last_close <= zone_hi:
             dist_atr = 0.0
         elif pd.isna(atr_now) or atr_now <= 0.0:
-            return 0.0, "outside_pullback_zone", None
+            return 0.0, "outside_pullback_zone"
         elif last_close < zone_lo:
             dist_atr = (zone_lo - last_close) / atr_now
         else:
@@ -154,17 +169,21 @@ class TrendPullback:
 
         zone_min, zone_max = p["pullback_zone_atr_min"], p["pullback_zone_atr_max"]
         if dist_atr > zone_max:
-            return 0.0, "outside_pullback_zone", None
+            return 0.0, "outside_pullback_zone"
         if dist_atr <= zone_min:
-            return 1.0, None, f"pullback_zone_dist_atr={dist_atr:.3f}"
+            return 1.0, f"pullback_zone_dist_atr={dist_atr:.3f}"
         score = 1.0 - (dist_atr - zone_min) / (zone_max - zone_min)
-        return max(0.0, score), None, f"pullback_zone_dist_atr={dist_atr:.3f}"
+        return max(0.0, score), f"pullback_zone_dist_atr={dist_atr:.3f}"
 
     @staticmethod
     def _reversal_trigger_score(
         open_: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series, direction: str
-    ) -> tuple[float, str | None, str | None]:
-        """§3.1 score component: ONE reversal trigger required (engulfing OR body>=60% OR HA flip)."""
+    ) -> tuple[float, str]:
+        """
+        §3.1 score component: ONE reversal trigger (engulfing OR body>=60% OR HA
+        flip). Uniform (score, reason) 2-tuple (FIXED 2026-07-09 — see module
+        docstring): absence of any trigger scores 0 via `reason`, never a veto.
+        """
         if direction == "long":
             engulf = bool(_bullish_engulfing(open_, close).iloc[-1])
         else:
@@ -184,8 +203,8 @@ class TrendPullback:
 
         fired = [name for name, hit in (("engulfing", engulf), ("body>=60%", body_trigger), ("ha_flip", ha_flip)) if hit]
         if not fired:
-            return 0.0, "no_reversal_trigger", None
-        return 1.0, None, "reversal_trigger:" + "+".join(fired)
+            return 0.0, "no_reversal_trigger"
+        return 1.0, "reversal_trigger:" + "+".join(fired)
 
     @staticmethod
     def _ema200_side_score(last_close: float, ema200: float, direction: str) -> tuple[float, str]:
@@ -202,14 +221,18 @@ class TrendPullback:
         return (1.0, "on_side_of_ema200") if on_side else (0.0, "beyond_ema200_zone")
 
     @staticmethod
-    def _rsi_side_score(rsi_now: float, direction: str) -> tuple[float, str | None, str | None]:
-        """§3.1 score component: RSI>50 for long, RSI<50 for short."""
+    def _rsi_side_score(rsi_now: float, direction: str) -> tuple[float, str]:
+        """
+        §3.1 score component: RSI>50 for long, RSI<50 for short. Uniform (score,
+        reason) 2-tuple (FIXED 2026-07-09 — see module docstring): wrong-side or
+        unavailable RSI scores 0 via `reason`, never a veto.
+        """
         if pd.isna(rsi_now):
-            return 0.0, "rsi_unavailable", None
+            return 0.0, "rsi_unavailable"
         on_side = rsi_now > 50.0 if direction == "long" else rsi_now < 50.0
         if not on_side:
-            return 0.0, "rsi_wrong_side", None
-        return 1.0, None, f"rsi={rsi_now:.1f}"
+            return 0.0, "rsi_wrong_side"
+        return 1.0, f"rsi={rsi_now:.1f}"
 
     @staticmethod
     def _stop_loss(

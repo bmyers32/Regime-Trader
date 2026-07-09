@@ -50,7 +50,7 @@ from bot.strategies.base import Signal
 
 _COST_CFG = {
     "spread_pips": {"asian": 1.5, "london": 1.0, "ny_overlap": 1.0},
-    "max_spread_pips": 5.0,
+    "max_spread_pips": {"asian": 5.0, "london": 5.0, "ny_overlap": 5.0},
     "slippage_pips": 0.2,
     "rollover_pips_per_day": {"long": -0.3, "short": 0.1},
 }
