@@ -17,6 +17,8 @@ from datetime import datetime
 
 import pandas as pd
 
+from bot.backtest.costs import session_for_hour
+
 
 @dataclass
 class BacktestTrade:
@@ -116,9 +118,13 @@ def max_drawdown(equity_curve: pd.Series) -> float:
 
 def compute_metrics(trades: list[BacktestTrade], equity_curve: pd.Series) -> dict:
     """
-    Net PnL, trade count, win rate, max drawdown, and per-regime attribution
-    (count/net_pnl/win_rate keyed by regime_at_entry) — the shape §5.5 needs once
-    real strategies populate regime_at_entry with more than one regime value.
+    Net PnL, trade count, win rate, max drawdown, per-regime attribution
+    (count/net_pnl/win_rate keyed by regime_at_entry, §5.5), and per-session
+    attribution (same shape, keyed by bot.backtest.costs.session_for_hour(entry
+    hour)) — general-purpose, not strategy-specific. Added for range_reversion's
+    §3.2 "Session: prefer London/NY; Asian-session behavior is per-pair
+    calibration, not assumption" — this lets the empirical funnel/attribution
+    answer the session question instead of the strategy encoding a guess.
     """
     trade_count = len(trades)
     net_pnl = sum(t.pnl for t in trades)
@@ -135,10 +141,23 @@ def compute_metrics(trades: list[BacktestTrade], equity_curve: pd.Series) -> dic
         bucket["win_rate"] = bucket["wins"] / bucket["count"] if bucket["count"] else 0.0
         del bucket["wins"]
 
+    per_session: dict[str, dict] = {}
+    for t in trades:
+        session = session_for_hour(t.entry_ts.hour)
+        bucket = per_session.setdefault(session, {"count": 0, "net_pnl": 0.0, "wins": 0})
+        bucket["count"] += 1
+        bucket["net_pnl"] += t.pnl
+        if t.pnl > 0:
+            bucket["wins"] += 1
+    for bucket in per_session.values():
+        bucket["win_rate"] = bucket["wins"] / bucket["count"] if bucket["count"] else 0.0
+        del bucket["wins"]
+
     return {
         "trade_count": trade_count,
         "net_pnl": net_pnl,
         "win_rate": win_rate,
         "max_drawdown": max_drawdown(equity_curve),
         "per_regime": per_regime,
+        "per_session": per_session,
     }

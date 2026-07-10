@@ -178,3 +178,46 @@ rather than by reading the spec/contract first and asserting what SHOULD happen:
 snapshot tests taken during a bug, API contract tests written against a buggy client,
 golden files regenerated to match broken output — the fastest way to write a test that
 can never fail is to let broken behavior write its own assertion.
+
+### A branch no caller has ever taken isn't proven, however carefully it was written.
+*Phase 6 — EUR_GBP's missing conversion_series, 2026-07-10*
+bot.backtest.sizing.py's cross-currency conversion path has existed since Phase 4,
+with a correct docstring, three documented cases, and a loud SizingError refusal.
+But every pair scripts/run_validation_gates.py actually ran in Phase 5 (EUR_USD:
+quote=USD; USD_JPY: base=USD) took the direct or self-conversion branch — the
+cross-conversion branch had zero live callers despite looking complete. EUR_GBP
+(quote=GBP, account=USD, the first pair this session that genuinely needed a
+cross series) hit it immediately: the gate-running scripts never built or passed a
+conversion_series argument at all, because nothing had ever needed one.
+Ignoring it → specific failure: a correctly-written function ships beside caller
+code that never exercises one of its documented branches; the gap is invisible
+until the first real input that needs it, at which point it looks like a fresh bug
+instead of what it is — a coverage gap that existed since the function was written.
+Applies anywhere a shared module supports N cases but the caller fleet has only
+ever supplied a subset: currency conversion, locale/i18n branches, error-recovery
+paths, feature flags — a branch with no caller is unverified regardless of how
+carefully it was written.
+
+### A green equity curve is one gate of three.
+*Phase 6 close-out — EUR_USD range_reversion's Asian-exclusion follow-up, 2026-07-10*
+tests/test_validation_defendants.py's defendant (d) was built on synthetic marker
+data specifically to prove the harness could catch a lucky, zero-edge draw whose
+one realized stitched-OOS trade sequence happens to sum positive — gate 3 (walk-
+forward) rubber-stamps it, gate 6 (Monte Carlo bootstrap resampling the SAME
+trades) overturns it. This session's pre-registered session-preference follow-up
+(excluding Asian-hour entries) reproduced that exact pattern on REAL data for the
+first time: gate 3 flipped from FAIL to PASS (net_pnl=+82.34, 76 trades — a real,
+not synthetic, positive result), and gates 4 AND 6 both still failed it (no
+profitable parameter neighborhood; bootstrap P(net_pnl<=0)=42.3%, far above the 5%
+robustness bar). The synthetic defendant proved the harness COULD convict this
+shape of false positive; this run is the first time it actually did, in the wild,
+on a result a less disciplined process would have reported as "the fix worked."
+Ignoring it → specific failure: treating gate 3's PASS as the verdict (because it's
+the most legible, chart-shaped number — a rising equity curve) and shipping on it,
+when gates 4/6 exist precisely because a positive stitched backtest can be
+achieved by a handful of lucky trades that don't represent a stable, resamplable
+edge.
+Applies anywhere a single passing metric is mistaken for the whole verdict: a green
+CI run with no coverage gate, a profitable backtest with no walk-forward split, an
+A/B test read at the first significant p-value with no correction for peeking — the
+number that's easiest to look at is rarely the number that was built to protect you.

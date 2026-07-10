@@ -190,3 +190,23 @@ def heikin_ashi_bearish_flip(ha_open: pd.Series, ha_close: pd.Series) -> pd.Seri
     current_bearish = ha_close < ha_open
     prev_not_bearish = ha_close.shift(1) >= ha_open.shift(1)
     return (current_bearish & prev_not_bearish).fillna(False)
+
+
+def bb_reentry_long(close: pd.Series, lower_band: pd.Series) -> pd.Series:
+    """
+    TRADING-RULES §3.2: "close back INSIDE lower BB (re-entry close, not pierce)".
+    Close-based, not wick-based: prior bar's CLOSE was at/below the lower band
+    (outside), current bar's CLOSE is back above it (inside) — deliberately NOT a
+    same-bar wick-touches-then-closes-back-in pattern, which is what "not pierce"
+    rules out. NaN (band warmup) on either side resolves to False via fillna.
+    """
+    prev_outside = close.shift(1) <= lower_band.shift(1)
+    current_inside = close > lower_band
+    return (prev_outside & current_inside).fillna(False)
+
+
+def bb_reentry_short(close: pd.Series, upper_band: pd.Series) -> pd.Series:
+    """Mirror of bb_reentry_long at the upper band (TRADING-RULES §3.2 short side)."""
+    prev_outside = close.shift(1) >= upper_band.shift(1)
+    current_inside = close < upper_band
+    return (prev_outside & current_inside).fillna(False)

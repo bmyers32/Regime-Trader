@@ -88,7 +88,7 @@ All routes require login (credentials from .env; Flask-Login or HTTP Basic — p
 | 3 | Indicators + regime classifier w/ hysteresis, per-pair calibration notes | [x] |
 | 4 | Backtester: event-driven, spread/slippage/rollover, golden-run tests | [x] |
 | 5 | trend_pullback + walk-forward validation | [x] |
-| 6 | range_reversion, validated same way | [ ] |
+| 6 | range_reversion, validated same way | [x] |
 | 7 | squeeze_breakout, validated same way | [ ] |
 | 8 | Risk + execution layer; practice forward-test begins | [ ] |
 | 9 | Dashboard (local), all pages, pair toggles end-to-end | [ ] |

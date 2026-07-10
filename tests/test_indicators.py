@@ -24,6 +24,8 @@ import pytest
 from bot.indicators.core import (
     adx,
     atr,
+    bb_reentry_long,
+    bb_reentry_short,
     bb_width,
     bearish_engulfing,
     body_pct,
@@ -451,4 +453,65 @@ class TestHeikinAshi:
         ha_open = pd.Series([1.00, 1.00])
         ha_close = pd.Series([1.02, 1.03])  # both bullish -> no flip
         result = heikin_ashi_bullish_flip(ha_open, ha_close)
+        assert result.iloc[1] == False
+
+
+# ---------------------------------------------------------------------------
+# BB re-entry (Phase 6, range_reversion — TRADING-RULES §3.2)
+# ---------------------------------------------------------------------------
+
+class TestBbReentry:
+    def test_long_reentry_detected(self) -> None:
+        """Prior close at/below lower band, current close back above it -> True."""
+        close = pd.Series([0.98, 1.01])
+        lower = pd.Series([1.00, 1.00])
+        result = bb_reentry_long(close, lower)
+        assert result.iloc[0] == False  # no prior bar to compare
+        assert result.iloc[1] == True
+
+    def test_long_no_reentry_when_prior_already_inside(self) -> None:
+        """Prior close already inside the band -> no re-entry event, just 'inside'."""
+        close = pd.Series([1.01, 1.02])
+        lower = pd.Series([1.00, 1.00])
+        result = bb_reentry_long(close, lower)
+        assert result.iloc[1] == False
+
+    def test_long_no_reentry_when_still_outside(self) -> None:
+        """Prior close outside AND current close still outside -> not a re-entry yet."""
+        close = pd.Series([0.98, 0.99])
+        lower = pd.Series([1.00, 1.00])
+        result = bb_reentry_long(close, lower)
+        assert result.iloc[1] == False
+
+    def test_long_same_bar_wick_pierce_is_not_a_reentry(self) -> None:
+        """
+        'Not pierce' clause: this function is close-only and has no wick inputs by
+        design, so a same-bar wick-touch-then-close-back-in can never be confused
+        with a genuine prior-bar close-based re-entry — asserted here via a case
+        where the PRIOR close was already inside (only a wick could have pierced
+        intrabar) and confirming no re-entry fires.
+        """
+        close = pd.Series([1.005, 1.01])
+        lower = pd.Series([1.00, 1.00])
+        result = bb_reentry_long(close, lower)
+        assert result.iloc[1] == False
+
+    def test_short_reentry_detected(self) -> None:
+        """Mirror: prior close at/above upper band, current close back below it -> True."""
+        close = pd.Series([1.02, 0.99])
+        upper = pd.Series([1.00, 1.00])
+        result = bb_reentry_short(close, upper)
+        assert result.iloc[1] == True
+
+    def test_short_no_reentry_when_still_outside(self) -> None:
+        close = pd.Series([1.02, 1.01])
+        upper = pd.Series([1.00, 1.00])
+        result = bb_reentry_short(close, upper)
+        assert result.iloc[1] == False
+
+    def test_nan_band_resolves_false(self) -> None:
+        """Band warmup rows (NaN) must resolve to False, not NaN/error."""
+        close = pd.Series([0.98, 1.01])
+        lower = pd.Series([float("nan"), 1.00])
+        result = bb_reentry_long(close, lower)
         assert result.iloc[1] == False
