@@ -52,9 +52,11 @@ import copy
 import sys
 from collections import Counter
 from dataclasses import dataclass
+from itertools import combinations
 from pathlib import Path
 from typing import Callable
 
+import pandas as pd
 import yaml
 
 from bot.backtest.engine import BacktestEngine
@@ -63,8 +65,11 @@ from bot.backtest.monte_carlo import MonteCarloResult, run_monte_carlo
 from bot.backtest.stability import run_stability_sweep
 from bot.backtest.walk_forward import WalkForwardWindow, run_walk_forward
 from bot.data.cache import CandleCache
-from bot.regime.classifier import RegimeClassifier
+from bot.indicators.core import atr as _atr
+from bot.indicators.core import bollinger_bands as _bollinger_bands
+from bot.regime.classifier import RegimeClassifier, RegimeState
 from bot.strategies.range_reversion import RangeReversion
+from bot.strategies.squeeze_breakout import SqueezeBreakout
 from bot.strategies.trend_pullback import TrendPullback
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -156,6 +161,49 @@ def _build_param_grid_range_reversion(base_params: dict) -> list[dict]:
     return grid
 
 
+# ---------------------------------------------------------------------------
+# squeeze_breakout param grid (Phase 7, new)
+# ---------------------------------------------------------------------------
+
+_SB_STABILITY_KEYS = [
+    "sl_atr_mult",
+    "entry_threshold",
+    "atr_expansion_ratio",
+    "atr_expansion_mean_mult",
+    "volume_expansion_mult",
+]
+# compression_box_lookback_bars / volume_lookback_bars excluded -- same precedent as
+# trend_pullback's swing_lookback_bars / range_reversion's rejection_lookback_bars:
+# integer bar-counts, perturb_one_at_a_time's +/-10% sweep produces non-integer values
+# a bar-slicing/rolling-window op can't accept.
+_SB_SIMPLEX_GROUPS = [
+    [
+        "score_weights.close_beyond_band",
+        "score_weights.atr_expansion",
+        "score_weights.body_pct",
+        "score_weights.tick_volume",
+    ],
+]
+_SB_ENTRY_THRESHOLD_GRID = [0.3, 0.5, 0.7, 0.85]
+_SB_SCORE_WEIGHTS_GRID = [
+    {"close_beyond_band": 0.30, "atr_expansion": 0.30, "body_pct": 0.30, "tick_volume": 0.10},  # current provisional default
+    {"close_beyond_band": 0.40, "atr_expansion": 0.30, "body_pct": 0.20, "tick_volume": 0.10},  # band-close-heavy
+    {"close_beyond_band": 0.25, "atr_expansion": 0.40, "body_pct": 0.25, "tick_volume": 0.10},  # ATR-expansion-heavy
+    {"close_beyond_band": 0.30, "atr_expansion": 0.30, "body_pct": 0.25, "tick_volume": 0.15},  # volume nudged up, still low
+]
+
+
+def _build_param_grid_squeeze_breakout(base_params: dict) -> list[dict]:
+    grid = []
+    for threshold in _SB_ENTRY_THRESHOLD_GRID:
+        for weights in _SB_SCORE_WEIGHTS_GRID:
+            candidate = copy.deepcopy(base_params)
+            candidate["entry_threshold"] = threshold
+            candidate["score_weights"] = dict(weights)
+            grid.append(candidate)
+    return grid
+
+
 def classify_threshold_regime(weights: dict, threshold: float) -> str:
     """HANDOFF.md disposition 1: classify a binary-2-component (threshold, weights)
     choice into the discrete effective regime it produces. Only meaningful for
@@ -168,6 +216,45 @@ def classify_threshold_regime(weights: dict, threshold: float) -> str:
     if threshold <= hi:
         return "ASYMMETRIC (only the heavier-weighted component can fire alone)"
     return "AND (both components required)"
+
+
+def classify_threshold_regime_general(weights: dict, threshold: float) -> str:
+    """
+    Generalizes classify_threshold_regime (range_reversion's 2-component OR/
+    asymmetric/AND trichotomy, left untouched above -- this is a NEW, additive
+    function, RR's registry entry still calls the original) to any number of binary
+    components -- squeeze_breakout's 4 (DISPOSITION 2, HANDOFF.md/plan doc). Enumerates
+    every non-empty subset of `weights`, keeps the ones whose summed weight clears
+    `threshold` ("covering" subsets), then keeps only the MINIMAL covering subsets (a
+    covering subset containing a smaller covering subset is redundant to report --
+    the smaller one already proves that combination suffices). Returns a
+    human-readable string: a single-component minimal subset means that component
+    alone can fire the signal (OR-region); a subset containing every component means
+    all are required (AND-region, matching §3.3's literal "+" for its 3 named trigger
+    conditions when tick_volume is not part of any minimal subset); anything else is a
+    genuine N-of-M case reported as the literal minimal subset(s), same spirit as RR's
+    "asymmetric" label but not collapsed into a fixed vocabulary that only fits 2
+    components.
+    """
+    names = list(weights.keys())
+    covering: list[frozenset] = []
+    for r in range(1, len(names) + 1):
+        for combo in combinations(names, r):
+            if sum(weights[n] for n in combo) >= threshold:
+                covering.append(frozenset(combo))
+
+    minimal = [c for c in covering if not any(other < c for other in covering)]
+    minimal.sort(key=lambda c: (len(c), sorted(c)))
+
+    if not minimal:
+        return "UNREACHABLE (no subset of components can clear this threshold)"
+
+    parts = ["+".join(sorted(c)) for c in minimal]
+    if len(minimal) == 1 and len(minimal[0]) == len(names):
+        return f"AND (all {len(names)} components required: {parts[0]})"
+    if all(len(c) == 1 for c in minimal):
+        return f"OR (any single component alone fires: {', '.join(parts)})"
+    return f"N-of-{len(names)} (minimal firing subsets: {'; '.join(parts)})"
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +289,17 @@ _STRATEGIES: dict[str, _StrategySpec] = {
         simplex_groups=_RR_SIMPLEX_GROUPS,
         build_param_grid=_build_param_grid_range_reversion,
         classify_window=lambda w: classify_threshold_regime(
+            w.chosen_params["score_weights"], w.chosen_params["entry_threshold"]
+        ),
+    ),
+    "squeeze_breakout": _StrategySpec(
+        name="squeeze_breakout",
+        strategy_class=SqueezeBreakout,
+        params_key="squeeze_breakout_params",
+        stability_keys=_SB_STABILITY_KEYS,
+        simplex_groups=_SB_SIMPLEX_GROUPS,
+        build_param_grid=_build_param_grid_squeeze_breakout,
+        classify_window=lambda w: classify_threshold_regime_general(
             w.chosen_params["score_weights"], w.chosen_params["entry_threshold"]
         ),
     ),
@@ -395,6 +493,96 @@ def run_gates_for_pair(
         "representative_params": representative_params,
         "mode_count": mode_count,
         "n_windows": n_windows,
+        # Kept on the return dict (not re-derived) so callers -- e.g. __main__'s
+        # squeeze_breakout-only hysteresis-excluded diagnostic -- don't need a second
+        # cache load / config parse.
+        "ltf_df": ltf_df,
+        "htf_df": htf_df,
+        "regime_params": regime_params,
+        "htf_gran": htf_gran,
+        "ltf_gran": ltf_gran,
+    }
+
+
+_GRANULARITY_HOURS = {"M15": 0.25, "H1": 1.0, "H4": 4.0, "D": 24.0}
+
+
+def compute_hysteresis_excluded(
+    ltf_df: pd.DataFrame,
+    htf_df: pd.DataFrame,
+    regime_params: dict,
+    htf_gran: str,
+    ltf_gran: str,
+    windows: list[WalkForwardWindow],
+    instrument: str,
+) -> dict:
+    """
+    DISPOSITION 1's known limitation, made measurable (HANDOFF.md "approved addition
+    1"): counts LTF bars where the confirmed regime has just left COMPRESSION (within
+    hysteresis_window_bars = htf_ltf_ratio * regime_confirm_bars -- the minimum
+    bar-count the HTF hysteresis mechanism can itself take to confirm a switch away
+    from COMPRESSION, not an arbitrary round number) but SqueezeBreakout's own trigger
+    scoring -- evaluated with THAT walk-forward window's own frozen chosen_params,
+    never the provisional yaml defaults, same frozen-params standard as the (a)/(b)
+    post-mortem split -- would have cleared threshold. squeeze_breakout carries no
+    vetoes ever (module docstring), so "fired" here is just score >= entry_threshold.
+
+    The HTF regime timeline is classified ONCE over the full history (it doesn't
+    depend on strategy params, only the trigger evaluation does) and broadcast to LTF
+    bars via merge_asof(direction="backward") -- the SAME "latest confirmed regime as
+    of this bar" semantics bot.backtest.engine.BacktestEngine uses internally.
+
+    ONLY called for squeeze_breakout (see __main__ below) -- this function is not part
+    of the _StrategySpec registry surface trend_pullback/range_reversion use, by
+    design: it is meaningless for playbooks with no regime-lag failure mode of this
+    shape.
+    """
+    htf_ltf_ratio = _GRANULARITY_HOURS[htf_gran] / _GRANULARITY_HOURS[ltf_gran]
+    hysteresis_window_bars = int(round(htf_ltf_ratio * regime_params["regime_confirm_bars"]))
+
+    classifier = RegimeClassifier(regime_params)
+    classifier.reset()
+    htf_regimes = [classifier.classify(htf_df.iloc[: i + 1]).regime.value for i in range(len(htf_df))]
+    htf_regime_series = pd.DataFrame({"time": htf_df["time"], "regime": htf_regimes})
+
+    merged = pd.merge_asof(ltf_df[["time"]], htf_regime_series, on="time", direction="backward")
+    is_compression = (merged["regime"] == RegimeState.COMPRESSION.value).to_numpy()
+
+    idx = pd.Series(range(len(is_compression)))
+    last_compression_idx = idx.where(is_compression).ffill()
+    bars_since_compression = idx - last_compression_idx
+    candidate_mask = (~is_compression) & (bars_since_compression <= hysteresis_window_bars)
+    candidate_positions = [i for i in range(len(ltf_df)) if bool(candidate_mask.iloc[i])]
+
+    per_window_results = []
+    for w in windows:
+        p = w.chosen_params
+        strategy = SqueezeBreakout(p, instrument)
+        min_bars = max(p["bb_period"], p["compression_box_lookback_bars"] + 1, p["volume_lookback_bars"], 180)
+        window_positions = [
+            i for i in candidate_positions
+            if i >= min_bars and w.oos_start_ts <= ltf_df["time"].iloc[i] <= w.oos_end_ts
+        ]
+        excluded_count = 0
+        for i in window_positions:
+            window_slice = ltf_df.iloc[: i + 1]
+            close = window_slice["close"]
+            upper, _, lower = _bollinger_bands(close, p["bb_period"], p["bb_std"])
+            upper_now, lower_now = upper.iloc[-1], lower.iloc[-1]
+            last_close = close.iloc[-1]
+            atr_now = _atr(window_slice["high"], window_slice["low"], close, 14).iloc[-1]
+            direction = SqueezeBreakout._derive_direction(last_close, upper_now, lower_now)
+            score, _ = strategy._evaluate_trigger(window_slice, p, direction, upper, lower, atr_now)
+            if score >= p["entry_threshold"]:
+                excluded_count += 1
+        per_window_results.append(
+            {"window_index": w.window_index, "candidates": len(window_positions), "hysteresis_excluded": excluded_count}
+        )
+
+    return {
+        "hysteresis_window_bars": hysteresis_window_bars,
+        "per_window": per_window_results,
+        "total_hysteresis_excluded": sum(r["hysteresis_excluded"] for r in per_window_results),
     }
 
 
@@ -431,3 +619,25 @@ if __name__ == "__main__":
         f"observed_drawdown={mc.observed_drawdown:.3f} "
         f"prob_nonpositive={mc.prob_nonpositive:.3f} drawdown_p95={mc.drawdown_p95:.3f}"
     )
+
+    if strategy_arg == "squeeze_breakout":
+        # Approved addition (HANDOFF.md / plan doc) -- DISPOSITION 1's known
+        # hysteresis-lag limitation, made measurable. Only meaningful for this
+        # playbook (see compute_hysteresis_excluded's own docstring).
+        diag = compute_hysteresis_excluded(
+            result["ltf_df"], result["htf_df"], result["regime_params"],
+            result["htf_gran"], result["ltf_gran"], wf.windows, instrument_arg,
+        )
+        fired = wf.stitched_metrics["trade_count"]
+        print()
+        print(f"Hysteresis-excluded diagnostic (window={diag['hysteresis_window_bars']} LTF bars, per-window frozen params):")
+        for r in diag["per_window"]:
+            print(f"  window {r['window_index']}: candidates={r['candidates']:4d} hysteresis_excluded={r['hysteresis_excluded']}")
+        total = diag["total_hysteresis_excluded"]
+        print(f"  TOTAL hysteresis_excluded={total} vs fired={fired}")
+        print(
+            "  PRE-REGISTERED DECISION RULE: if the overall verdict is FAIL or evidence-thin "
+            "AND hysteresis_excluded is large relative to fired, this routes to §2 "
+            "regime-routing territory (a Change-Log candidate for a future session) -- "
+            "NOT the trigger, NOT the revival budget, NOT an M15 comparison."
+        )

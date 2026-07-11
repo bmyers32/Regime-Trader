@@ -210,3 +210,17 @@ def bb_reentry_short(close: pd.Series, upper_band: pd.Series) -> pd.Series:
     prev_outside = close.shift(1) >= upper_band.shift(1)
     current_inside = close < upper_band
     return (prev_outside & current_inside).fillna(False)
+
+
+def bb_breakout_long(close: pd.Series, upper_band: pd.Series) -> pd.Series:
+    """
+    TRADING-RULES §3.3: "close beyond band" (upside). Close-based, not wick-based --
+    same convention as bb_reentry_long/short, opposite direction: a close OUTSIDE the
+    band, not a re-entry back inside. NaN (band warmup) resolves to False via fillna.
+    """
+    return (close > upper_band).fillna(False)
+
+
+def bb_breakout_short(close: pd.Series, lower_band: pd.Series) -> pd.Series:
+    """Mirror of bb_breakout_long at the lower band (TRADING-RULES §3.3 short side)."""
+    return (close < lower_band).fillna(False)

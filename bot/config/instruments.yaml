@@ -108,6 +108,48 @@ defaults:
     expansion_veto_atr_ratio: 1.25       # reused from regime_params.atr_expansion_ratio (dimensionless multiplier, computed on THIS strategy's LTF window, not the HTF regime classifier's) — see range_reversion.py's _expansion_veto docstring
     expansion_veto_atr_mean_mult: 1.3    # reused from regime_params.atr_expansion_mean_mult, same rationale
 
+  # squeeze_breakout strategy params (Phase 7, bot/strategies/squeeze_breakout.py).
+  # COMPRESSION-only playbook: regime==COMPRESSION IS the precondition (§3.3's
+  # precondition bullet is verbatim §2's own COMPRESSION definition, not a second
+  # check — see squeeze_breakout.py's module docstring, DISPOSITION 1). Trigger =
+  # 4 scored binary components (close_beyond_band, atr_expansion, body_pct — §3.3's
+  # three "+"-joined conditions — plus tick_volume as required low-weight weak
+  # evidence, DISPOSITION 3), never vetoes — vetoes is structurally always empty for
+  # this strategy. SL = whichever is farther/more protective of (compression-box
+  # opposite side, sl_atr_mult*ATR) — DISPOSITION 5. No fixed TP — exit is the SAME
+  # partial-at-1R + ATR/Chandelier trail exit_cfg trend_pullback uses (own numbers
+  # below), DISPOSITION 6 (§3.3 gives no exit/target language at all; a trailed exit
+  # matches the "cost-tolerant, larger-target" thesis a fixed TP would cap).
+  #
+  # PROVISIONAL (2026-07-10): implements §3.3's prose spec with reasonable defaults,
+  # same disposition as both prior playbooks' kickoffs. NOT yet empirically validated —
+  # entry_threshold/score_weights searched inside each walk-forward window's own IS
+  # slice (TRADING-RULES §5 gates 3-4) once real gates run this phase. See HANDOFF.md
+  # and the approved plan doc for the full spec-mapping reasoning (6 dispositions + 2
+  # approved additions: a hysteresis-excluded diagnostic and a realized-R-distribution
+  # non-degeneracy check, both reported once real gates run).
+  squeeze_breakout_params:
+    bb_period: 20
+    bb_std: 2.0
+    compression_box_lookback_bars: 20   # recent high/low extent defining the "compression box", excludes the trigger bar itself; matches bb_period — see DISPOSITION 5
+    sl_atr_mult: 1.5                    # §3.3's own exact number (no range given, unlike §3.1/§3.2 — no midpoint decision needed)
+    atr_expansion_ratio: 1.25           # reused from regime_params.atr_expansion_ratio (dimensionless, computed on THIS strategy's LTF window) — see squeeze_breakout.py's _atr_expansion_score docstring
+    atr_expansion_mean_mult: 1.3        # reused from regime_params.atr_expansion_mean_mult, same rationale
+    volume_lookback_bars: 20            # tick-volume's own rolling-mean window, same "expansion vs own recent mean" shape as ATR expansion
+    volume_expansion_mult: 1.3          # reuses the same dimensionless-multiplier convention as atr_expansion_mean_mult rather than inventing a new kind of threshold
+    entry_threshold: 0.85                # sits just below the 3-real-trigger-AND sum (0.3+0.3+0.3=0.9, float-realized as 0.8999999999999999 — 0.85 gives a safe margin rather than landing exactly on that float boundary) and comfortably above any 2-real+volume combination (max 0.7) — tick_volume structurally cannot rescue a missing real trigger at this weighting; subject to per-window walk-forward search (DISPOSITION 2)
+    score_weights:                      # must sum to 1.0; provisional, see calibration_note above
+      close_beyond_band: 0.3
+      atr_expansion: 0.3
+      body_pct: 0.3
+      tick_volume: 0.1                  # fixed low across the whole grid (DISPOSITION 3) — "weak evidence", never load-bearing
+    exit:
+      partial_fraction: 0.5             # fraction of units closed at partial_at_r
+      partial_at_r: 1.0                 # R-multiple that triggers the partial — same convention trend_pullback uses, own number (not copied)
+      breakeven_after_partial: false    # NOT in §3.3 — must earn its way in via walk-forward, never a silent default
+      trail_atr_period: 22              # standard Chandelier Exit ATR period
+      trail_atr_mult: 3.0               # standard Chandelier Exit multiplier
+
   # Cost model (Phase 4, bot/backtest/costs.py + sizing.py). No shared defaults here —
   # per TRADING-RULES §1.7 every threshold ships with a calibration note, and spread/
   # rollover are pair-specific by nature (GBP/JPY spreads nothing like EUR/USD). Each
@@ -185,6 +227,14 @@ instruments:
         "range_reversion H1 post-mortem"), so running the remaining pairs against
         the identical spec is not expected to be informative. Revisit only if
         the playbook is redefined (new edge thesis), not standalone.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. NOT RUN
+        (2026-07-10 disposition): Phase 7 targets GBP_USD then USD_JPY first
+        (breakout-character pairs, per HANDOFF.md's kickoff pair-ordering
+        reasoning) — running the remaining pairs before those two produce a
+        verdict is not expected to be informative. Revisit only on evidence,
+        same discipline as Phases 5-6.
     cost_model:
       spread_pips:
         asian: 3.9
@@ -319,6 +369,16 @@ instruments:
         (scripts/gross_vs_net.py, original run): gross=-352.08 vs net=-354.20 —
         no-edge, not cost-dominated. See ROADMAP.md's "range_reversion H1
         post-mortem" for the full writeup. Not ship-ready; do not enable.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. NOT RUN
+        (2026-07-10 disposition): Phase 7 targets GBP_USD then USD_JPY first
+        (breakout-character pairs, per HANDOFF.md's kickoff pair-ordering
+        reasoning) — EUR_USD has already produced two no-edge verdicts under
+        this classifier/cost model (trend_pullback, range_reversion); running
+        it first here would bias toward re-confirming "no structure" rather
+        than testing squeeze_breakout's thesis on pairs suited to it. Second
+        wave only on evidence.
     cost_model:
       spread_pips:
         asian: 1.6
@@ -433,6 +493,33 @@ instruments:
         "range_reversion H1 post-mortem"), so running the remaining pairs against
         the identical spec is not expected to be informative. Revisit only if
         the playbook is redefined (new edge thesis), not standalone.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. TESTED
+        2026-07-11: TRADING-RULES §5 gates 3/4/6 run on real >=2yr H1/H4 OANDA
+        history + real cost_model — FAILED decisively. Gate 3: 50 stitched OOS
+        trades, net_pnl=-113.13. Gate 4: base_metric=+301.09 (POSITIVE
+        pre-perturbation, same "sharp non-robust peak" signature as GBP_USD)
+        — atr_expansion_mean_mult-10% deviates 88.6% (metric=567.89). Gate 6:
+        bootstrap P(net_pnl<=0)=61.9%. Trigger-region breakdown: 3/10 windows
+        selected the provisional default's own reading (3 real triggers,
+        tick_volume excluded); full per-window list in the "Phase 7 complete"
+        commit. Compression-regime pass-rate (§1.7 note): 29.9% of H4 bars —
+        comfortably non-degenerate. HYSTERESIS-EXCLUDED FINDING: 35
+        hysteresis-excluded evaluations vs. 50 fired (70%, per-window frozen
+        params) — same shape as GBP_USD, less extreme. Per the pre-registered
+        decision rule this ALSO routes to §2 regime-routing territory, not the
+        trigger or revival budget. False-break split (R-distribution
+        confirmed non-degenerate: min=-1.147/median=+0.199/p75=+0.893/
+        max=+1.310): 100% of losing trades (24/24) are false-break type —
+        same pre-registered treatment as GBP_USD, not the operative
+        explanation. Gross-vs-net (scripts/gross_vs_net.py): gross=+0.35
+        (51 trades) vs. net=-113.13 — mechanically gross>0 but this is an
+        ESSENTIALLY-ZERO-EDGE case ($0.35 across 51 trades over 766 days),
+        NOT a genuine cost-dominated result like range_reversion/EUR_GBP's
+        +340.09; do not treat as evidence of a real pre-cost edge. See
+        ROADMAP.md's "squeeze_breakout H1 post-mortem" for the full writeup.
+        Not ship-ready; do not enable.
     cost_model:
       spread_pips:
         asian: 1.6
@@ -543,6 +630,38 @@ instruments:
         "range_reversion H1 post-mortem"), so running the remaining pairs against
         the identical spec is not expected to be informative. Revisit only if
         the playbook is redefined (new edge thesis), not standalone.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. TESTED
+        2026-07-11: TRADING-RULES §5 gates 3/4/6 run on real >=2yr H1/H4 OANDA
+        history + real cost_model — FAILED decisively. Gate 3: 53 stitched OOS
+        trades, net_pnl=-691.75. Gate 4: base_metric=+56.68 (POSITIVE
+        pre-perturbation, unlike trend_pullback/range_reversion's "no
+        profitable neighborhood at all" signature) but a sharp, non-robust
+        peak — entry_threshold+10% deviates 93.1% (metric=109.46). Gate 6:
+        bootstrap P(net_pnl<=0)=96.8%. Trigger-region breakdown (DISPOSITION 2,
+        classify_threshold_regime_general): 4/10 windows selected the
+        provisional default's own reading (3 real triggers required,
+        tick_volume excluded from the minimal firing subset); remaining
+        windows spread across OR/other N-of-4 combinations — full per-window
+        list in the "Phase 7 complete" commit. Compression-regime pass-rate
+        (§1.7 note): 29.3% of H4 bars — comfortably non-degenerate.
+        HYSTERESIS-EXCLUDED FINDING (the decisive diagnostic — approved
+        addition 1): 52 hysteresis-excluded evaluations vs. 53 fired (~98%,
+        per-window frozen params) — essentially every fired trade had a
+        counterpart bar within 8 LTF bars of a COMPRESSION exit where the same
+        params would also have cleared threshold, had the regime gate not
+        excluded it. Per the pre-registered decision rule this routes to §2
+        regime-routing territory, NOT the trigger, NOT the revival budget.
+        False-break split (pre-registered protocol, R-distribution confirmed
+        non-degenerate: min=-1.061/median=-1.025/p75=+0.815/max=+2.760):
+        100% of losing trades (33/33) are false-break type (never reached
+        partial_at_r) — informative on its own, but the hysteresis finding
+        above is treated as the operative explanation per that pre-
+        registration, not this split. Gross-vs-net (scripts/gross_vs_net.py):
+        gross=-447.86 (54 trades) vs. net=-691.75 — no-edge. See ROADMAP.md's
+        "squeeze_breakout H1 post-mortem" for the full writeup. Not
+        ship-ready; do not enable.
     cost_model:
       spread_pips:
         asian: 1.9
@@ -654,6 +773,13 @@ instruments:
         "range_reversion H1 post-mortem"), so running the remaining pairs against
         the identical spec is not expected to be informative. Revisit only if
         the playbook is redefined (new edge thesis), not standalone.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. NOT RUN
+        (2026-07-10 disposition): Phase 7 targets GBP_USD then USD_JPY first
+        (breakout-character pairs, per HANDOFF.md's kickoff pair-ordering
+        reasoning). Second wave only on evidence, same discipline as
+        Phases 5-6.
     cost_model:
       spread_pips:
         asian: 1.3
@@ -787,6 +913,16 @@ instruments:
         result found across both playbooks tested so far. See ROADMAP.md's
         "range_reversion H1 post-mortem" for the full writeup. Not ship-ready; do
         not enable.
+    squeeze_breakout_calibration:
+      calibration_note: >
+        Uses defaults.squeeze_breakout_params — no per-pair override. NOT RUN
+        (2026-07-10 disposition): Phase 7 targets GBP_USD then USD_JPY first
+        (breakout-character pairs, per HANDOFF.md's kickoff pair-ordering
+        reasoning) — note EUR_GBP is known for compression/squeeze patterns
+        around BoE/ECB events (see this pair's top-level calibration_note)
+        and range_reversion found a genuine cost-dominated pre-cost edge here,
+        making it a plausible second-wave candidate on evidence, not a
+        reflexive first choice.
     cost_model:
       spread_pips:
         asian: 1.4

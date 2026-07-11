@@ -221,3 +221,29 @@ Applies anywhere a single passing metric is mistaken for the whole verdict: a gr
 CI run with no coverage gate, a profitable backtest with no walk-forward split, an
 A/B test read at the first significant p-value with no correction for peeking — the
 number that's easiest to look at is rarely the number that was built to protect you.
+
+### Decide which diagnostic wins before either diagnostic exists.
+*Phase 7 close-out — squeeze_breakout's hysteresis-excluded vs. false-break findings, 2026-07-11*
+Two diagnostics were pre-registered before any real data existed: a hysteresis-excluded
+count (bars where the trigger would have cleared threshold but the regime gate had
+just left COMPRESSION) and a false-break-vs-insufficient-expansion split (the
+playbook's own named failure mode, and the literal trigger condition for a deferred,
+already-drafted revival mechanism). Both fired on real data — hysteresis-excluded
+~98%/70% of fired trades on the two target pairs, AND 100% of losing trades on both
+pairs were false-break type. Taken alone, the false-break result is the more
+narratively satisfying one: it names the exact failure mode the playbook was built to
+guard against and points straight at a mechanism already sitting in ROADMAP.md ready
+to build. It was not acted on, because the decision rule written before the data
+existed said the hysteresis finding wins that specific conflict. Without a
+pre-registered arbitration rule, the session would have had to choose between two
+true-and-relevant findings under the pull of whichever one offered the more buildable
+next step — exactly the moment post-hoc reasoning finds its opening.
+Ignoring it → specific failure: two honest diagnostics disagree on what to do next,
+and the tie gets broken by which explanation is more convenient to act on rather than
+which one is more likely correct — the same rationalization risk pre-registration
+exists to prevent, just moved one level up from "which threshold" to "which finding."
+Applies anywhere a system can produce more than one true diagnostic pointing at
+different fixes: incident postmortems with two plausible root causes, A/B tests with
+conflicting primary and secondary metrics, code review flagging both a design smell
+and a quick patch — decide the priority order while neutral, not after seeing which
+story is more flattering to already-planned work.

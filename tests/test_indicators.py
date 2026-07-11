@@ -24,6 +24,8 @@ import pytest
 from bot.indicators.core import (
     adx,
     atr,
+    bb_breakout_long,
+    bb_breakout_short,
     bb_reentry_long,
     bb_reentry_short,
     bb_width,
@@ -515,3 +517,54 @@ class TestBbReentry:
         lower = pd.Series([float("nan"), 1.00])
         result = bb_reentry_long(close, lower)
         assert result.iloc[1] == False
+
+
+# ---------------------------------------------------------------------------
+# BB breakout (Phase 7, squeeze_breakout — TRADING-RULES §3.3)
+# ---------------------------------------------------------------------------
+
+class TestBbBreakout:
+    def test_long_breakout_detected(self) -> None:
+        """Close beyond the upper band -> True."""
+        close = pd.Series([1.00, 1.03])
+        upper = pd.Series([1.02, 1.02])
+        result = bb_breakout_long(close, upper)
+        assert result.iloc[0] == False
+        assert result.iloc[1] == True
+
+    def test_long_no_breakout_when_inside(self) -> None:
+        close = pd.Series([1.00, 1.01])
+        upper = pd.Series([1.02, 1.02])
+        result = bb_breakout_long(close, upper)
+        assert result.iloc[1] == False
+
+    def test_long_breakout_is_not_prior_bar_dependent(self) -> None:
+        """Unlike bb_reentry_long, breakout is a single-bar close condition -- no
+        prior-bar comparison, so a bar that was ALREADY outside on the prior close
+        still registers True on the current bar (there is no 're-entry' concept
+        here, only 'currently beyond')."""
+        close = pd.Series([1.03, 1.04])
+        upper = pd.Series([1.02, 1.02])
+        result = bb_breakout_long(close, upper)
+        assert result.iloc[0] == True
+        assert result.iloc[1] == True
+
+    def test_short_breakout_detected(self) -> None:
+        """Mirror: close beyond the lower band -> True."""
+        close = pd.Series([1.00, 0.97])
+        lower = pd.Series([0.98, 0.98])
+        result = bb_breakout_short(close, lower)
+        assert result.iloc[1] == True
+
+    def test_short_no_breakout_when_inside(self) -> None:
+        close = pd.Series([1.00, 0.99])
+        lower = pd.Series([0.98, 0.98])
+        result = bb_breakout_short(close, lower)
+        assert result.iloc[1] == False
+
+    def test_nan_band_resolves_false(self) -> None:
+        """Band warmup rows (NaN) must resolve to False, not NaN/error."""
+        close = pd.Series([1.03, 1.04])
+        upper = pd.Series([float("nan"), 1.02])
+        result = bb_breakout_long(close, upper)
+        assert result.iloc[0] == False

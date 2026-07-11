@@ -54,6 +54,65 @@ def _bound_htf(htf_df, max_ltf_ts):
     return htf_df[htf_df["time"] <= max_ltf_ts]
 
 
+def false_break_vs_insufficient_expansion(trades) -> dict:
+    """
+    Phase 7 pre-registered post-mortem split (HANDOFF.md / squeeze_breakout plan doc),
+    squeeze_breakout only -- attributes LOSING stitched OOS trades between:
+      (a) false-break losses: never reached partial_at_r (BacktestTrade.
+          partial_exit_ts is None) -- stopped out before the expansion materialized
+          at all. Only this case is something the deferred optional-confirmation
+          filter (ROADMAP.md) could plausibly fix.
+      (b) expansion-materialized-but-insufficient losses: the partial WAS taken
+          (partial_exit_ts is not None) but total trade pnl is still negative -- the
+          move happened but wasn't enough to overcome the partial-vs-remainder math/
+          costs. Implicates trigger/exit tuning instead; does NOT license spending
+          the revival budget on the confirmation-filter mechanism.
+    Winning trades are counted separately (informational only -- the split's whole
+    purpose is diagnosing LOSSES).
+    """
+    losers = [t for t in trades if t.pnl < 0]
+    false_break = [t for t in losers if t.partial_exit_ts is None]
+    insufficient = [t for t in losers if t.partial_exit_ts is not None]
+    winners = [t for t in trades if t.pnl >= 0]
+    return {
+        "total_trades": len(trades),
+        "winners": len(winners),
+        "losers": len(losers),
+        "false_break_count": len(false_break),
+        "false_break_pnl": sum(t.pnl for t in false_break),
+        "insufficient_expansion_count": len(insufficient),
+        "insufficient_expansion_pnl": sum(t.pnl for t in insufficient),
+    }
+
+
+def r_multiple_distribution(trades) -> dict:
+    """
+    Approved addition (HANDOFF.md / plan doc): realized R-multiple distribution
+    (BacktestTrade.pnl_r) across all stitched OOS trades -- REQUIRED non-degeneracy
+    check before false_break_vs_insufficient_expansion's split is interpreted. If
+    nearly every trade clusters at ~-1R with none approaching +partial_at_r (or the
+    reverse), the (a)/(b) split is not meaningfully discriminating and must be
+    flagged, not reported as a clean classification.
+    """
+    if not trades:
+        return {"count": 0}
+    r_values = sorted(t.pnl_r for t in trades)
+    n = len(r_values)
+
+    def _pct(p: float) -> float:
+        idx = min(n - 1, int(round(p * (n - 1))))
+        return r_values[idx]
+
+    return {
+        "count": n,
+        "min": r_values[0],
+        "p25": _pct(0.25),
+        "median": _pct(0.50),
+        "p75": _pct(0.75),
+        "max": r_values[-1],
+    }
+
+
 def per_session_attribution(trades) -> dict:
     per_session: dict[str, dict] = {}
     for t in trades:
@@ -153,6 +212,8 @@ if __name__ == "__main__":
         ("USD_JPY", "trend_pullback", instance_dir / "diagnostics_cache_USD_JPY.pkl", -700.08),
         ("EUR_USD", "range_reversion", instance_dir / "diagnostics_cache_range_reversion_EUR_USD.pkl", -354.20),
         ("EUR_GBP", "range_reversion", instance_dir / "diagnostics_cache_range_reversion_EUR_GBP.pkl", -163.13),
+        ("GBP_USD", "squeeze_breakout", instance_dir / "diagnostics_cache_squeeze_breakout_GBP_USD.pkl", -691.75),
+        ("USD_JPY", "squeeze_breakout", instance_dir / "diagnostics_cache_squeeze_breakout_USD_JPY.pkl", -113.13),
     ]
     for instrument, strategy_name, path, accepted_net in runs:
         cache = _load_cache(path)
@@ -163,3 +224,29 @@ if __name__ == "__main__":
             f"[{instrument}/{strategy_name}] gross={gross:10.2f} ({gross_trade_count} trades) "
             f"net={net:10.2f} (accepted={accepted_net:.2f}) -> {classification}"
         )
+
+    print()
+    print("=" * 78)
+    print("EXHIBIT 3: squeeze_breakout pre-registered false-break split + R-distribution")
+    print("=" * 78)
+    for instrument, path in [
+        ("GBP_USD", instance_dir / "diagnostics_cache_squeeze_breakout_GBP_USD.pkl"),
+        ("USD_JPY", instance_dir / "diagnostics_cache_squeeze_breakout_USD_JPY.pkl"),
+    ]:
+        cache = _load_cache(path)
+        trades = cache["trades"]
+        rdist = r_multiple_distribution(trades)
+        print(f"\n[{instrument}/squeeze_breakout] realized R-multiple distribution (non-degeneracy check, {rdist['count']} trades):")
+        print(f"  min={rdist['min']:.3f} p25={rdist['p25']:.3f} median={rdist['median']:.3f} p75={rdist['p75']:.3f} max={rdist['max']:.3f}")
+        split = false_break_vs_insufficient_expansion(trades)
+        print(f"[{instrument}/squeeze_breakout] false-break vs insufficient-expansion split (pre-registered protocol):")
+        print(
+            f"  winners={split['winners']} losers={split['losers']} | "
+            f"(a) false_break: count={split['false_break_count']} pnl={split['false_break_pnl']:.2f} | "
+            f"(b) insufficient_expansion: count={split['insufficient_expansion_count']} pnl={split['insufficient_expansion_pnl']:.2f}"
+        )
+        per_session = per_session_attribution(trades)
+        print(f"[{instrument}/squeeze_breakout] net_pnl by session (informational -- no pre-registered follow-up trigger this phase):")
+        for session in ("asian", "london", "ny_overlap"):
+            b = per_session.get(session, {"count": 0, "net_pnl": 0.0, "win_rate": 0.0})
+            print(f"  {session:12s} count={b['count']:3d} net_pnl={b['net_pnl']:10.2f} win_rate={b['win_rate']:.3f}")
