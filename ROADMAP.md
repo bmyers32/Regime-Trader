@@ -87,42 +87,12 @@ and signal-free; permanently closes squeeze_breakout and this §2 question.
 **All three playbooks now FAILED and closed, zero TRADING-RULES §6 revival budget
 spent** — Phase 8 (risk/execution layer) has no playbook cleared to forward-test.
 
-## Next session: Pivot cycle — census + hearings-budget (drafted, not executed)
-Drafted 2026-07-12 (external review conversation) — not yet in TRADING-RULES.md, not
-executed; this is the plan the next session runs. Surfaced by squeeze_breakout's §2
-post-mortem (archive/POST-MORTEMS.md §5): COMPRESSION resolves to confirmed EXPANSION
-only ~2-4% of the time but to TRENDING/RANGING ~60%+ — "trend inception from
-compression" is an untested, distinct entry population from either dead thesis.
-
-**Deliverable 1 — Law (add to TRADING-RULES §6, dated, when this session runs):**
-> Pivot-cycle hearings budget: THREE full §5 hearings for the current data window.
-> Slots 1–2 pre-claimed on external-evidence grounds: D1/H4 time-series momentum;
-> carry-with-regime-conditioning. Slot 3 awarded only by census evidence, to at most
-> ONE candidate; all others recorded and closed. The cap governs hearings, not
-> winners: every hearing that passes gates proceeds to §5 sign-off and ships —
-> multiple passes all ship, routing per §2. The Phase 11 forward test (≥60 days,
-> unseen data) is the final arbiter for every pass. Exhausting the budget without any
-> pass ends strategy search on this window. Renews only when the data window
-> materially renews (≥12 months of new candles).
-
-**Deliverable 2 — Moments census, measurement only** (no strategies, no parameters, no
-gates, cached data only), all six pairs, per closed-list candidate: (a) population
-count over the full window; (b) event study — forward returns at +4/+8/+24 LTF bars
-vs. matched random same-regime baseline; (c) cost context — median session spread at
-event hour vs. forward-move magnitude.
-
-**Candidates (closed list):** (i) COMPRESSION→TRENDING confirmed transitions ("trend
-inception," surfaced by §5's post-mortem); (ii) TRENDING→RANGING→TRENDING
-resumptions; (iii) EXPANSION→RANGING aftermath; (iv) London-open after a defined
-Asian range; (v) failed-breakout re-entry into the compression box; (vi) TRENDING
-death (ADX rollover <20); (vii) Monday open gaps; (viii) month-end final two
-sessions.
-
-**Award rule (pre-registered):** slot 3 goes to the single candidate whose
-event-study distribution is most distinguishable from baseline AND whose cost ratio
-clears 4:1 at realistic horizons — only if at least one clears both; none do → slot 3
-forfeited, budget is two. Borderline forfeits; ties go to fewer hearings.
-Momentum/carry are already in (external evidence), not competing for a slot — the
-census counts and measures, it doesn't rank on narrative appeal. See BRAIN.md
-"Decide which diagnostic wins before either diagnostic exists" and "A tripped
-guardrail is a demand for evidence, not a verdict."
+**Pivot-cycle census + hearings-budget (EXECUTED 2026-07-12):** Law live in
+TRADING-RULES.md §6 (2026-07-12 entry) — three-hearing budget, slots 1–2 pre-claimed
+(momentum, carry-with-regime-conditioning), slot 3 by census evidence only. Census of
+all 8 pre-registered candidates × 6 pairs found 3 clearing both bars (distinguishable
++ cost ≥4:1): (iii) EXPANSION→RANGING, (iv) London-open after Asian range, (v)
+failed-breakout re-entry into compression box. **Slot 3 AWARDED to (v)** per the
+pre-registered margin tie-break; (iii)/(iv) recorded and closed, not awarded (cap
+governs hearings, not winners — at most one). → archive/CENSUS-PIVOT-CYCLE.md,
+commit (this session).
