@@ -94,23 +94,6 @@ built for -- and a fixed TP would cap the fat tail a trailed exit exists to keep
 contradicting the kickoff's own "cost-tolerant, larger-target" framing for this playbook.
 Own squeeze_breakout_params.exit block (own partial_at_r/trail_atr_mult/
 trail_atr_period), not copied from trend_pullback's numbers.
-
-DISPOSITION 7 (§2 consultation-window experiment, TRADING-RULES §2/§3.3, dated
-2026-07-11 -- addresses DISPOSITION 1's KNOWN LIMITATION above via §2 regime-routing,
-not a trigger/revival-budget change): Hard gate A is amended. generate_signal now
-consults when regime==COMPRESSION (unchanged) OR (regime==EXPANSION AND
-regime.prior_regime==COMPRESSION AND regime.bars_in_regime<=regime_confirm_bars) --
-this is the unit-correct HTF-bar-denominated equivalent of "N=htf_ltf_ratio x
-regime_confirm_bars LTF bars past a confirmed COMPRESSION->EXPANSION transition"
-(regime.bars_in_regime is HTF-denominated; N's own LTF-bar derivation collapses to
-regime_confirm_bars once expressed in HTF-bar units -- see TRADING-RULES §2). The SL's
-compression box FREEZES at the COMPRESSION-exit boundary for these consultation-window
-entries (_stop_loss's box_offset, tracked via self._ltf_bars_since_compression, an
-independent LTF-bar counter) rather than sliding with the live lookback -- a frozen box
-mechanically widens the SL for later entries within the window, which biases the (a)/(b)
-false-break split toward (b) on geometry alone; scripts/gross_vs_net.py's early/late
-(bars_in_regime==1 vs ==2) stratification separates that from a genuine
-confirmation-quality signal. No other playbook's routing changes.
 """
 
 from __future__ import annotations
@@ -138,51 +121,20 @@ _MIN_BODY_PCT = 0.60
 class SqueezeBreakout:
     """
     params: instruments.yaml's squeeze_breakout_params (defaults merged with any
-    per-instrument squeeze_breakout_calibration override), PLUS regime_confirm_bars
-    and htf_ltf_ratio injected at instantiation time from the SAME run's
-    regime_params -- never duplicated in YAML (see scripts/run_validation_gates.py's
-    _StrategySpec.extra_params / scripts/diagnose_gates.py's mirrored injection).
-    One instance per instrument PER RUN. All indicator computation is still
-    pure/recomputed from the window each call -- but as of the §2 consultation-
-    window experiment (TRADING-RULES §2/§3.3, dated 2026-07-11), this class carries
-    ONE piece of real instance state, self._ltf_bars_since_compression (an LTF-bar
-    counter, NOT cached indicator output), used only to freeze the compression-box
-    SL for entries taken during the extended consultation window. This is a real,
-    documented deviation from the prior "stateless otherwise" claim -- it is safe
-    only because a FRESH instance is constructed for every backtest run/window
-    (the same registry instantiation pattern all three playbooks share, see
-    scripts/run_validation_gates.py's _make_run_fn), so nothing leaks across runs
-    and no explicit reset() method is needed (contrast RegimeClassifier, which IS
-    reused across a run and does need reset()).
+    per-instrument squeeze_breakout_calibration override).
+    One instance per instrument (stateless otherwise -- all indicators recomputed from
+    the window each call, matching the Strategy Protocol's pure-function contract).
     """
 
     def __init__(self, params: dict, instrument: str) -> None:
         self._params = params
         self._instrument = instrument
-        self._ltf_bars_since_compression: int | None = None
-        # LTF-bar counter, reset to 0 on every COMPRESSION bar and incremented on
-        # every other consulted bar -- used ONLY to freeze the compression-box SL
-        # (see _stop_loss's box_offset). None until this instance has observed its
-        # first COMPRESSION bar (see generate_signal's box_offset fallback).
 
     def generate_signal(self, window: pd.DataFrame, regime: RegimeResult) -> Signal | None:
-        # Bookkeeping runs on every call this strategy is asked about (even ones
-        # about to return None below), so the frozen-SL anchor stays accurate
-        # whenever a later consultation-window bar needs it.
-        if regime.regime == RegimeState.COMPRESSION:
-            self._ltf_bars_since_compression = 0
-        elif self._ltf_bars_since_compression is not None:
-            self._ltf_bars_since_compression += 1
-
-        p = self._params
-        consult = regime.regime == RegimeState.COMPRESSION or (
-            regime.regime == RegimeState.EXPANSION
-            and regime.prior_regime == RegimeState.COMPRESSION
-            and regime.bars_in_regime <= p["regime_confirm_bars"]
-        )
-        if not consult:
+        if regime.regime != RegimeState.COMPRESSION:
             return None  # not routed to this playbook this bar -> nothing to journal
 
+        p = self._params
         min_bars = max(
             p["bb_period"],
             p["compression_box_lookback_bars"] + 1,
@@ -203,30 +155,7 @@ class SqueezeBreakout:
 
         confidence_score, reasons = self._evaluate_trigger(window, p, direction, upper, lower, atr_now)
 
-        if regime.regime == RegimeState.EXPANSION and self._ltf_bars_since_compression is not None:
-            # Consultation-window entry, with a real observed LTF count (the
-            # documented fallback below covers the edge case where this instance
-            # has never seen COMPRESSION in its own lifetime -- not this branch).
-            # Consistency assertion (approved addition 1, 2026-07-11): the
-            # strategy's own LTF counter and the classifier's HTF bars_in_regime
-            # (converted via htf_ltf_ratio) must agree on the window bound. A trip
-            # means the two clocks have drifted apart -- a semantic finding to
-            # surface, not something to silently paper over.
-            box_offset = self._ltf_bars_since_compression
-            bound = p["htf_ltf_ratio"] * p["regime_confirm_bars"]
-            assert 1 <= box_offset <= bound, (
-                f"consultation-window clock mismatch: ltf_bars_since_compression="
-                f"{box_offset} outside [1, {bound}] (htf_ltf_ratio={p['htf_ltf_ratio']}, "
-                f"regime_confirm_bars={p['regime_confirm_bars']}, "
-                f"bars_in_regime={regime.bars_in_regime})"
-            )
-        else:
-            # Either COMPRESSION-routed (box_offset always 0, original behavior),
-            # or the accepted "never observed COMPRESSION yet" edge case for a
-            # consultation-window entry (module docstring) -- falls back to the
-            # unfrozen sliding box rather than fabricating an anchor never seen.
-            box_offset = 0
-        sl = self._stop_loss(window, last_close, atr_now, direction, p, box_offset)
+        sl = self._stop_loss(window, last_close, atr_now, direction, p)
 
         return Signal(
             strategy="squeeze_breakout",
@@ -400,30 +329,15 @@ class SqueezeBreakout:
 
     @staticmethod
     def _stop_loss(
-        window: pd.DataFrame,
-        last_close: float,
-        atr_now: float,
-        direction: str,
-        p: dict,
-        box_offset: int = 0,
+        window: pd.DataFrame, last_close: float, atr_now: float, direction: str, p: dict
     ) -> float:
         """§3.3: SL = opposite side of the compression box, or 1.5x ATR -- whichever is
         FARTHER/more protective (DISPOSITION 5; trend_pullback's swing-extreme-vs-
         ATR-mult convention, the one existing precedent for an unranked SL "X or Y").
         Box excludes the trigger bar itself (window.iloc[-1]) -- a strong breakout
-        candle's own extreme would otherwise place the SL absurdly close.
-
-        box_offset (DISPOSITION 7, §2 consultation-window experiment, dated
-        2026-07-11): 0 (default) reproduces the original sliding-window box exactly
-        -- every COMPRESSION-routed entry, unmodified. >0 FREEZES the box at the
-        COMPRESSION-exit boundary for a COMPRESSION-originated EXPANSION entry taken
-        box_offset LTF bars into the consultation window (see generate_signal's
-        self._ltf_bars_since_compression -- an exact, per-call-observed LTF count,
-        not an HTF-ratio approximation). A wider (farther) SL is the mechanical,
-        pre-registered consequence for later entries -- see scripts/gross_vs_net.py's
-        early/late stratification."""
+        candle's own extreme would otherwise place the SL absurdly close."""
         lookback = p["compression_box_lookback_bars"]
-        box = window.iloc[-(lookback + box_offset + 1) : -(box_offset + 1)]
+        box = window.iloc[-(lookback + 1) : -1]
         if direction == "long":
             sl_by_box = box["low"].min()
             sl_by_atr = last_close - p["sl_atr_mult"] * atr_now

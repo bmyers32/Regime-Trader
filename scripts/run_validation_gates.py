@@ -270,12 +270,6 @@ class _StrategySpec:
     simplex_groups: list[list[str]]
     build_param_grid: Callable[[dict], list[dict]]
     classify_window: Callable[[WalkForwardWindow], str] | None = None
-    extra_params: Callable[[dict, float], dict] | None = None
-    # Merged into strategy_params (from regime_params/htf_ltf_ratio, never
-    # duplicated in instruments.yaml) BEFORE build_param_grid runs, so every
-    # grid candidate inherits it automatically. None (default, trend_pullback/
-    # range_reversion) is a no-op -- zero behavior change for those two.
-    # §2 consultation-window experiment, dated 2026-07-11.
 
 
 _STRATEGIES: dict[str, _StrategySpec] = {
@@ -308,10 +302,6 @@ _STRATEGIES: dict[str, _StrategySpec] = {
         classify_window=lambda w: classify_threshold_regime_general(
             w.chosen_params["score_weights"], w.chosen_params["entry_threshold"]
         ),
-        extra_params=lambda regime_params, ratio: {
-            "regime_confirm_bars": regime_params["regime_confirm_bars"],
-            "htf_ltf_ratio": ratio,
-        },
     ),
 }
 
@@ -442,8 +432,6 @@ def run_gates_for_pair(
     run_fn = _make_run_fn(
         spec.strategy_class, instrument, account_currency, risk_pct, regime_params, cost_model, conversion_series
     )
-    if spec.extra_params is not None:
-        strategy_params = {**strategy_params, **spec.extra_params(regime_params, _htf_ltf_ratio(htf_gran, ltf_gran))}
     param_grid = spec.build_param_grid(strategy_params)
     print(
         f"[{instrument}/{spec.name}] param_grid: {len(param_grid)} candidates, "
@@ -519,15 +507,6 @@ def run_gates_for_pair(
 _GRANULARITY_HOURS = {"M15": 0.25, "H1": 1.0, "H4": 4.0, "D": 24.0}
 
 
-def _htf_ltf_ratio(htf_gran: str, ltf_gran: str) -> float:
-    """Single source of truth for htf:ltf granularity ratio -- shared by
-    compute_hysteresis_excluded's diagnostic and _StrategySpec.extra_params'
-    injection of squeeze_breakout's consultation-window bound (§2 experiment,
-    dated 2026-07-11), so both compute it identically instead of duplicating
-    the division."""
-    return _GRANULARITY_HOURS[htf_gran] / _GRANULARITY_HOURS[ltf_gran]
-
-
 def compute_hysteresis_excluded(
     ltf_df: pd.DataFrame,
     htf_df: pd.DataFrame,
@@ -558,7 +537,7 @@ def compute_hysteresis_excluded(
     design: it is meaningless for playbooks with no regime-lag failure mode of this
     shape.
     """
-    htf_ltf_ratio = _htf_ltf_ratio(htf_gran, ltf_gran)
+    htf_ltf_ratio = _GRANULARITY_HOURS[htf_gran] / _GRANULARITY_HOURS[ltf_gran]
     hysteresis_window_bars = int(round(htf_ltf_ratio * regime_params["regime_confirm_bars"]))
 
     classifier = RegimeClassifier(regime_params)

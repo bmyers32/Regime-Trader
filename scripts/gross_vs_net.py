@@ -85,34 +85,6 @@ def false_break_vs_insufficient_expansion(trades) -> dict:
     }
 
 
-def false_break_by_entry_window_offset(trades) -> dict:
-    """
-    §2 consultation-window experiment (dated 2026-07-11) -- NEW cut, separable
-    from (not a replacement for) false_break_vs_insufficient_expansion above.
-    Stratifies LOSING trades entered during the COMPRESSION-originated EXPANSION
-    consultation window (regime_at_entry=="EXPANSION") by bars_in_regime_at_entry:
-    1 ("early") vs regime_confirm_bars (2, "late", the default H4/H1 pairing). A
-    frozen compression-box SL mechanically widens for later entries (closer 1R) --
-    this cut makes that geometry-driven bias visible, separate from a genuine
-    confirmation-quality effect. Per the approved post-mortem language rule: a FAIL
-    with (b)-dominant losses concentrated in "late" here reads "thesis dead under
-    this exit configuration" (untouched trail params named as a confounder for
-    THAT sub-case only) -- every other shape closes unconditionally.
-    """
-    consult = [t for t in trades if t.regime_at_entry == "EXPANSION"]
-    out: dict[str, dict] = {}
-    for label, offset in (("early", 1), ("late", 2)):
-        subset = [t for t in consult if t.bars_in_regime_at_entry == offset]
-        losers = [t for t in subset if t.pnl < 0]
-        out[label] = {
-            "total": len(subset),
-            "losers": len(losers),
-            "false_break_count": sum(1 for t in losers if t.partial_exit_ts is None),
-            "insufficient_expansion_count": sum(1 for t in losers if t.partial_exit_ts is not None),
-        }
-    return out
-
-
 def r_multiple_distribution(trades) -> dict:
     """
     Approved addition (HANDOFF.md / plan doc): realized R-multiple distribution
@@ -278,12 +250,3 @@ if __name__ == "__main__":
         for session in ("asian", "london", "ny_overlap"):
             b = per_session.get(session, {"count": 0, "net_pnl": 0.0, "win_rate": 0.0})
             print(f"  {session:12s} count={b['count']:3d} net_pnl={b['net_pnl']:10.2f} win_rate={b['win_rate']:.3f}")
-        offset_split = false_break_by_entry_window_offset(trades)
-        print(f"[{instrument}/squeeze_breakout] early/late consultation-window stratification (§2 experiment, dated 2026-07-11):")
-        for label in ("early", "late"):
-            o = offset_split[label]
-            print(
-                f"  {label:5s} (bars_in_regime={'1' if label == 'early' else '2'}) total={o['total']:3d} "
-                f"losers={o['losers']:3d} | (a) false_break={o['false_break_count']} "
-                f"(b) insufficient_expansion={o['insufficient_expansion_count']}"
-            )

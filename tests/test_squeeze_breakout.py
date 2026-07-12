@@ -27,7 +27,6 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from bot.indicators.core import atr as _atr
 from bot.regime.classifier import RegimeResult, RegimeState
 from bot.strategies.squeeze_breakout import SqueezeBreakout
 
@@ -47,12 +46,6 @@ _PARAMS = {
         "body_pct": 0.3,
         "tick_volume": 0.1,
     },
-    # §2 consultation-window experiment (dated 2026-07-11) -- injected in real runs
-    # from regime_params/htf_ltf_ratio (see run_validation_gates.py's extra_params),
-    # hand-rolled here to match the default H4/H1 pairing (regime_confirm_bars=2,
-    # htf_ltf_ratio=4.0 -- see bot/config/instruments.yaml's defaults.regime_params).
-    "regime_confirm_bars": 2,
-    "htf_ltf_ratio": 4.0,
 }
 
 _COMPRESSION = RegimeResult(RegimeState.COMPRESSION, confidence=0.5, bars_in_regime=10)
@@ -274,134 +267,3 @@ class TestNearMissScoringNeverVetoes:
         assert signal.vetoes == []
         assert signal.confidence_score == pytest.approx(expected)
         assert len(signal.reasons) == 4
-
-
-# ---------------------------------------------------------------------------
-# §2 consultation-window extension (DISPOSITION 7, dated 2026-07-11) -- new,
-# per-test FRESH SqueezeBreakout instances (not the shared module-level
-# _STRATEGY) since this class carries real instance state
-# (_ltf_bars_since_compression) that must not leak across tests.
-# ---------------------------------------------------------------------------
-
-class TestConsultationWindowExtension:
-    def _fresh_after_compression(self) -> SqueezeBreakout:
-        """A fresh instance driven through one real COMPRESSION call, so its
-        internal _ltf_bars_since_compression counter is 0 going into the
-        EXPANSION calls that follow (mirrors the engine's real per-LTF-bar call
-        sequence)."""
-        strategy = SqueezeBreakout(_PARAMS, "GBP_USD")
-        strategy.generate_signal(_build_breakout("long"), _COMPRESSION)
-        return strategy
-
-    def test_expansion_from_compression_bar_1_is_consulted(self) -> None:
-        """First confirmed EXPANSION bar (bars_in_regime=1, RegimeClassifier's own
-        reset-to-1 semantics on a confirmed switch) is consulted."""
-        strategy = self._fresh_after_compression()
-        window = _build_breakout("long")
-        regime = RegimeResult(
-            RegimeState.EXPANSION, confidence=0.6, bars_in_regime=1, prior_regime=RegimeState.COMPRESSION
-        )
-        assert strategy.generate_signal(window, regime) is not None
-
-    def test_expansion_from_compression_bar_at_regime_confirm_bars_is_consulted(self) -> None:
-        """Upper boundary, inclusive: bars_in_regime == regime_confirm_bars (=2)
-        is still consulted."""
-        strategy = self._fresh_after_compression()
-        window = _build_breakout("long")
-        strategy.generate_signal(
-            window,
-            RegimeResult(
-                RegimeState.EXPANSION, confidence=0.6, bars_in_regime=1, prior_regime=RegimeState.COMPRESSION
-            ),
-        )
-        regime = RegimeResult(
-            RegimeState.EXPANSION, confidence=0.6, bars_in_regime=2, prior_regime=RegimeState.COMPRESSION
-        )
-        assert strategy.generate_signal(window, regime) is not None
-
-    def test_expansion_from_compression_bar_past_regime_confirm_bars_not_consulted(self) -> None:
-        """Boundary exceeded: bars_in_regime == regime_confirm_bars+1 (=3) is NOT
-        consulted."""
-        strategy = self._fresh_after_compression()
-        window = _build_breakout("long")
-        regime = RegimeResult(
-            RegimeState.EXPANSION, confidence=0.6, bars_in_regime=3, prior_regime=RegimeState.COMPRESSION
-        )
-        assert strategy.generate_signal(window, regime) is None
-
-    def test_expansion_not_originated_from_compression_still_not_consulted(self) -> None:
-        """The AND is genuinely conjunctive: EXPANSION with a low bars_in_regime but
-        a DIFFERENT prior_regime must not be consulted -- regression guard against
-        collapsing to "any low-bars_in_regime EXPANSION fires"."""
-        strategy = SqueezeBreakout(_PARAMS, "GBP_USD")
-        window = _build_breakout("long")
-        regime = RegimeResult(
-            RegimeState.EXPANSION, confidence=0.6, bars_in_regime=1, prior_regime=RegimeState.RANGING
-        )
-        assert strategy.generate_signal(window, regime) is None
-
-    def test_expansion_default_prior_regime_none_not_consulted(self) -> None:
-        """Same regression guard, but for the dataclass's own default (prior_regime
-        unset) -- the pre-existing 4-way TestRegimeRouting parametrize used this
-        exact shape before prior_regime existed; kept explicit here since it now
-        exercises a real branch of the AND, not just an absent field."""
-        strategy = SqueezeBreakout(_PARAMS, "GBP_USD")
-        window = _build_breakout("long")
-        regime = RegimeResult(RegimeState.EXPANSION, confidence=0.6, bars_in_regime=1)
-        assert strategy.generate_signal(window, regime) is None
-
-
-class TestFrozenCompressionBoxSL:
-    def test_stop_loss_box_offset_zero_matches_original_sliding_box(self) -> None:
-        """box_offset=0 must reproduce the pre-amendment formula exactly -- an
-        outlier low at index 7 sits OUTSIDE the offset=0 lookback window (indices
-        9-28 for lookback=20) and must not affect the result."""
-        n = 30
-        lows = [1.0900] * n
-        lows[7] = 1.0800  # outlier, only visible to a frozen (offset>0) box
-        highs = [1.0950] * n
-        window = pd.DataFrame({"low": lows, "high": highs})
-        sl = SqueezeBreakout._stop_loss(
-            window, last_close=1.0950, atr_now=0.0005, direction="long", p=_PARAMS, box_offset=0
-        )
-        assert sl == pytest.approx(1.0900)  # box term (1.0900) farther than sl_by_atr=1.09425
-
-    def test_stop_loss_box_offset_freezes_box_earlier(self) -> None:
-        """box_offset=2 shifts the box back 2 bars, picking up the earlier outlier
-        low the offset=0 box excludes -- proving the freeze anchors earlier,
-        producing a FARTHER (more protective) SL, the pre-registered geometry
-        consequence of a frozen box for later consultation-window entries."""
-        n = 30
-        lows = [1.0900] * n
-        lows[7] = 1.0800
-        highs = [1.0950] * n
-        window = pd.DataFrame({"low": lows, "high": highs})
-        sl_offset_0 = SqueezeBreakout._stop_loss(
-            window, last_close=1.0950, atr_now=0.0005, direction="long", p=_PARAMS, box_offset=0
-        )
-        sl_offset_2 = SqueezeBreakout._stop_loss(
-            window, last_close=1.0950, atr_now=0.0005, direction="long", p=_PARAMS, box_offset=2
-        )
-        assert sl_offset_2 < sl_offset_0
-        assert sl_offset_2 == pytest.approx(1.0800)
-
-    def test_generate_signal_freezes_sl_at_compression_exit(self) -> None:
-        """Drives a fresh instance through a real COMPRESSION call, then a
-        consultation-window EXPANSION call -- confirms the resulting SL matches
-        box_offset=1 (frozen at the COMPRESSION-exit boundary), not box_offset=0
-        (the live/sliding box)."""
-        strategy = SqueezeBreakout(_PARAMS, "GBP_USD")
-        window = _build_breakout("long")
-        strategy.generate_signal(window, _COMPRESSION)  # counter -> 0
-
-        regime = RegimeResult(
-            RegimeState.EXPANSION, confidence=0.6, bars_in_regime=1, prior_regime=RegimeState.COMPRESSION
-        )
-        signal = strategy.generate_signal(window, regime)  # counter -> 1, box_offset=1
-        assert signal is not None
-
-        atr_now = _atr(window["high"], window["low"], window["close"], 14).iloc[-1]
-        expected_sl = SqueezeBreakout._stop_loss(
-            window, window["close"].iloc[-1], atr_now, "long", _PARAMS, box_offset=1
-        )
-        assert signal.sl == pytest.approx(expected_sl)

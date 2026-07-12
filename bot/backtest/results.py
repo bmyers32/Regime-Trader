@@ -42,12 +42,6 @@ class BacktestTrade:
     partial_exit_px: float | None = None
     partial_exit_units: float | None = None
     partial_exit_pnl: float | None = None
-    # §2 consultation-window experiment (dated 2026-07-11): regime.bars_in_regime at
-    # entry, so gross_vs_net.py's early/late (bars_in_regime==1 vs ==2) stratification
-    # can separate SL-geometry effects from genuine confirmation-quality signal.
-    # None for any pre-existing trade shape (regime_at_entry != "EXPANSION" from a
-    # COMPRESSION-originated consultation-window entry, or trades predating this field).
-    bars_in_regime_at_entry: int | None = None
 
 
 @dataclass

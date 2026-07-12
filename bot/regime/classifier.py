@@ -23,11 +23,6 @@ Gray zone (adx_range_max ≤ ADX < adx_trend_min): _raw_regime returns _INDETERM
   classify() treats this as "hold current regime" — increments bars_in_regime but does
   not advance the switch candidate.
 
-prior_regime (added for the §2 consultation-window experiment, TRADING-RULES §2/§3.3,
-  dated 2026-07-11): tracks the regime confirmed immediately before the current one,
-  set at the same instant bars_in_regime resets to 1 (a confirmed switch), and held
-  through gray-zone/same-regime bars the same way current_regime/bars_in_regime are.
-
 All parameters come from instruments.yaml via the params dict (no hardcoded thresholds).
 """
 
@@ -65,18 +60,6 @@ class RegimeResult:
     without §5 validation.
     """
     bars_in_regime: int
-    prior_regime: RegimeState | None = None
-    """
-    The confirmed regime immediately before the current one. None until the
-    first confirmed switch this classifier instance has seen (incl. through
-    bootstrap). Set ONLY at the exact moment classify() confirms a switch
-    (mirrors bars_in_regime resetting to 1 there); held unchanged through
-    gray-zone holds and same-regime reinforcement, same convention
-    current_regime/bars_in_regime already follow. Added for the §2
-    consultation-window experiment (TRADING-RULES §2/§3.3, dated
-    2026-07-11) -- squeeze_breakout is the only current consumer, but this
-    is shared classifier state used by all playbooks.
-    """
 
 
 class RegimeClassifier:
@@ -100,7 +83,6 @@ class RegimeClassifier:
         self._last_confidence: float = 0.0
         self._candidate_regime: RegimeState | None = None
         self._candidate_bars: int = 0
-        self._prior_regime: RegimeState | None = None
 
     def reset(self) -> None:
         """Reset all state. Required before each backtest run."""
@@ -109,7 +91,6 @@ class RegimeClassifier:
         self._last_confidence = 0.0
         self._candidate_regime = None
         self._candidate_bars = 0
-        self._prior_regime = None
 
     def classify(self, htf_window: pd.DataFrame) -> RegimeResult:
         """
@@ -131,16 +112,12 @@ class RegimeClassifier:
             self._current_regime = boot
             self._bars_in_regime = 1
             self._last_confidence = 0.0 if raw_regime is _INDETERMINATE else raw_confidence
-            return RegimeResult(
-                self._current_regime, self._last_confidence, self._bars_in_regime, self._prior_regime
-            )
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
 
         # Gray zone: hold regime, still count the bar
         if raw_regime is _INDETERMINATE:
             self._bars_in_regime += 1
-            return RegimeResult(
-                self._current_regime, self._last_confidence, self._bars_in_regime, self._prior_regime
-            )
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
 
         # Same regime: reinforce, clear any pending candidate
         if raw_regime == self._current_regime:
@@ -148,9 +125,7 @@ class RegimeClassifier:
             self._last_confidence = raw_confidence
             self._candidate_regime = None
             self._candidate_bars = 0
-            return RegimeResult(
-                self._current_regime, self._last_confidence, self._bars_in_regime, self._prior_regime
-            )
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
 
         # Different regime: advance switch candidate
         if raw_regime == self._candidate_regime:
@@ -168,7 +143,6 @@ class RegimeClassifier:
         )
 
         if confirmed and hold_ok:
-            self._prior_regime = self._current_regime
             self._current_regime = self._candidate_regime
             self._bars_in_regime = 1
             self._last_confidence = raw_confidence
@@ -177,9 +151,7 @@ class RegimeClassifier:
         else:
             self._bars_in_regime += 1
 
-        return RegimeResult(
-            self._current_regime, self._last_confidence, self._bars_in_regime, self._prior_regime
-        )
+        return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
 
     # ------------------------------------------------------------------
     # Internal

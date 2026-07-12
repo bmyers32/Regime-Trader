@@ -92,12 +92,6 @@ def stitched_oos_trades_and_signals(instrument: str, strategy_name: str = "trend
     ltf_df = cache.load(instrument, ltf_gran)
     conversion_series = rvg.load_conversion_series(instrument, account_currency, cache, ltf_gran)
 
-    if spec.extra_params is not None:
-        strategy_params = {
-            **strategy_params,
-            **spec.extra_params(regime_params, rvg._htf_ltf_ratio(htf_gran, ltf_gran)),
-        }
-
     def run_fn(params, ltf_slice, htf_slice):
         strategy = spec.strategy_class(params, instrument)
         classifier = RegimeClassifier(regime_params)

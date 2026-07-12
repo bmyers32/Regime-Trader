@@ -239,7 +239,6 @@ class BacktestEngine:
             "units": units,  # current tradable size; reduced in place by a partial close
             "initial_units": units,  # fixed at open — original full size for the trade record
             "regime_at_entry": regime.regime.value,
-            "bars_in_regime_at_entry": regime.bars_in_regime,
             "risk_amount": equity * (self._risk_pct / 100.0),
             "partial_done": False,
             "trail_extreme": None,
@@ -418,7 +417,6 @@ class BacktestEngine:
             pnl_r=pnl_r,
             exit_reason=exit_reason,
             regime_at_entry=position["regime_at_entry"],
-            bars_in_regime_at_entry=position["bars_in_regime_at_entry"],
             partial_exit_ts=position["partial_exit_ts"],
             partial_exit_px=position["partial_exit_px"],
             partial_exit_units=position["partial_exit_units"],

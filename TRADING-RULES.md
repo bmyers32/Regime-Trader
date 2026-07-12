@@ -27,7 +27,7 @@ Anchor (higher) TF classifies; strategies execute on lower TF.
 | TRENDING_UP/DOWN | ADX(14)>25 AND EMA20/50/200 aligned AND MA slope persistent N bars | trend_pullback |
 | RANGING | ADX<20 AND flat MA slope | range_reversion |
 | EXPANSION | ATR(10)/ATR(50)>1.25 or ATR>1.3×60-bar mean | reduce size / stand aside |
-| COMPRESSION | BB width < own 20th rolling percentile | arm squeeze_breakout — EXPERIMENTAL (dated 2026-07-11, pending re-validation, see §6 Change Log): squeeze_breakout MAY additionally consult for N = htf_ltf_ratio × regime_confirm_bars LTF bars after confirming EXPANSION, IF that EXPANSION was entered directly from COMPRESSION (see §3.3). No other playbook's routing changes. |
+| COMPRESSION | BB width < own 20th rolling percentile | arm squeeze_breakout |
 
 Hysteresis mandatory: 2 consecutive closed anchor candles to switch; min hold M bars; regime+bars journaled every cycle. ADX 25–40 tradeable; >50 possible exhaustion → trend playbook takes no NEW entries.
 
@@ -50,7 +50,7 @@ Hysteresis mandatory: 2 consecutive closed anchor candles to switch; min hold M 
 - Session: prefer London/NY; Asian-session behavior is per-pair calibration, not assumption.
 
 ### 3.3 squeeze_breakout (COMPRESSION→EXPANSION)
-- Precondition: BB width < own rolling 20th percentile. EXPERIMENTAL (dated 2026-07-11, pending re-validation): the consultation window additionally includes the first N bars of an EXPANSION regime that was entered directly from COMPRESSION, N = htf_ltf_ratio × regime_confirm_bars — see §2 and the Change Log.
+- Precondition: BB width < own rolling 20th percentile.
 - Trigger: close beyond band + ATR expansion + ≥60% body.
 - Optional false-break cut: next candle holds beyond level, or enter on retest.
 - SL: opposite side of compression box or 1.5×ATR — NEVER opposite BB band.
