@@ -85,7 +85,10 @@ def stitched_oos_trades_and_signals(instrument: str, strategy_name: str = "trend
     regime_params = defaults["regime_params"]
     strategy_params = defaults[spec.params_key]
     cost_model = raw["instruments"][instrument]["cost_model"]
-    htf_gran, ltf_gran = defaults["timeframe_htf"], defaults["timeframe_ltf"]
+    htf_gran = spec.htf_gran or defaults["timeframe_htf"]
+    ltf_gran = spec.ltf_gran or defaults["timeframe_ltf"]
+    is_bars = spec.is_bars or _IS_BARS
+    oos_bars = spec.oos_bars or _OOS_BARS
 
     cache = CandleCache(_CACHE_DIR)
     htf_df = cache.load(instrument, htf_gran)
@@ -112,7 +115,7 @@ def stitched_oos_trades_and_signals(instrument: str, strategy_name: str = "trend
 
     param_grid = spec.build_param_grid(strategy_params)
     n_bars = len(ltf_df)
-    bounds = generate_window_bounds(n_bars, _IS_BARS, _OOS_BARS)
+    bounds = generate_window_bounds(n_bars, is_bars, oos_bars)
 
     all_trades = []
     all_signals = []
@@ -250,12 +253,61 @@ def expansion_veto_pass_rate(signals) -> dict:
     return {"total": total, "fired": fired, "rate": rate, "flagged": flagged}
 
 
+def momentum_duty_cycle_and_rollover_share(
+    trades, instrument: str, cost_model: dict, account_currency: str, conversion_series: dict
+) -> dict:
+    """
+    A5(d) (TRADING-RULES §6, 2026-07-12): for multi-week holds, rollover may be the
+    largest single cost line -- duty cycle (fraction of the stitched OOS span spent
+    holding a position) is the number that makes that plausible or not. Rollover
+    dollar cost per trade replicates bot.backtest.engine.BacktestEngine._close_position's
+    OWN computation exactly (same rollover_cost_pips + pip_value_per_unit call shape,
+    partial-leg-aware) -- not a reimplementation with different math, a re-derivation
+    from BacktestTrade's already-recorded fields.
+    """
+    from bot.backtest.costs import rollover_cost_pips
+    from bot.backtest.sizing import pip_value_per_unit
+
+    if not trades:
+        return {"duty_cycle": 0.0, "total_rollover_cost": 0.0, "held_seconds": 0, "span_seconds": 0}
+
+    held_seconds = sum((t.exit_ts - t.entry_ts).total_seconds() for t in trades)
+    span_start = min(t.entry_ts for t in trades)
+    span_end = max(t.exit_ts for t in trades)
+    span_seconds = (span_end - span_start).total_seconds()
+    duty_cycle = held_seconds / span_seconds if span_seconds > 0 else 0.0
+
+    total_rollover_cost = 0.0
+    for t in trades:
+        pv = pip_value_per_unit(instrument, account_currency, t.exit_px, t.exit_ts, conversion_series)
+        if t.partial_exit_ts is not None:
+            leg1 = rollover_cost_pips(cost_model, t.direction, t.entry_ts, t.partial_exit_ts)
+            leg2 = rollover_cost_pips(cost_model, t.direction, t.partial_exit_ts, t.exit_ts)
+            remaining_units = t.units - (t.partial_exit_units or 0.0)
+            total_rollover_cost += leg1 * pv * t.units + leg2 * pv * remaining_units
+        else:
+            full = rollover_cost_pips(cost_model, t.direction, t.entry_ts, t.exit_ts)
+            total_rollover_cost += full * pv * t.units
+
+    return {
+        "duty_cycle": duty_cycle,
+        "held_seconds": held_seconds,
+        "span_seconds": span_seconds,
+        "total_rollover_cost": total_rollover_cost,
+    }
+
+
 def run_diagnostics(instrument: str, strategy_name: str = "trend_pullback") -> None:
     print(f"[{instrument}/{strategy_name}] re-running walk-forward (grid search per window) with record_signals=True ...", flush=True)
     trades, signals, window_chosen_params, regime_params, htf_df = stitched_oos_trades_and_signals(instrument, strategy_name)
     print(f"[{instrument}/{strategy_name}] stitched OOS: trades={len(trades)} signal_evaluations={len(signals)}", flush=True)
+    spec = rvg._STRATEGIES[strategy_name]
+    describe_params = spec.describe_params or (
+        lambda p: f"entry_threshold={p['entry_threshold']} score_weights={p['score_weights']}"
+    )
     for i, cp in enumerate(window_chosen_params):
-        print(f"    window {i}: entry_threshold={cp['entry_threshold']} score_weights={cp['score_weights']}")
+        print(f"    window {i}: {describe_params(cp)}")
+    htf_gran = spec.htf_gran or "H4"  # defaults.timeframe_htf is "H4" for every registered strategy so far
 
     import pickle
     cache_path = _ROOT / "instance" / f"diagnostics_cache_{strategy_name}_{instrument}.pkl"
@@ -294,11 +346,11 @@ def run_diagnostics(instrument: str, strategy_name: str = "trend_pullback") -> N
             hist[bucket] = hist.get(bucket, 0) + 1
         print(f"  histogram (0.1 buckets): {dict(sorted(hist.items()))}")
 
-    print(f"[{instrument}/{strategy_name}] DIAGNOSTIC 3 -- full H4 regime-classification frequency ...", flush=True)
+    print(f"[{instrument}/{strategy_name}] DIAGNOSTIC 3 -- full {htf_gran} regime-classification frequency ...", flush=True)
     timeline = regime_timeline(htf_df, regime_params)
     regime_counts = timeline["regime"].value_counts().to_dict()
     total_bars = len(timeline)
-    print(f"  total H4 bars={total_bars}")
+    print(f"  total {htf_gran} bars={total_bars}")
     for regime, count in sorted(regime_counts.items(), key=lambda kv: -kv[1]):
         print(f"    {regime:15s} {count:5d} ({count/total_bars:.1%})")
 
@@ -311,6 +363,55 @@ def run_diagnostics(instrument: str, strategy_name: str = "trend_pullback") -> N
     prox = transition_proximity(trades, timeline)
     for key, b in prox.items():
         print(f"  {key:12s} count={b['count']:3d} net_pnl={b['net_pnl']:10.2f} win_rate={b['win_rate']:.3f}")
+
+    if strategy_name == "momentum":
+        from bot.backtest.costs import session_for_hour
+
+        raw = _load_raw_config()
+        account_currency = raw.get("account_currency", "USD")
+        cost_model = raw["instruments"][instrument]["cost_model"]
+        cache2 = CandleCache(_CACHE_DIR)
+        conversion_series = rvg.load_conversion_series(instrument, account_currency, cache2, "H4")
+
+        print(f"[{instrument}/{strategy_name}] DIAGNOSTIC (per-session attribution, standard exhibit)")
+        per_session: dict = {}
+        for t in trades:
+            session = session_for_hour(t.entry_ts.hour)
+            b = per_session.setdefault(session, {"count": 0, "net_pnl": 0.0, "wins": 0})
+            b["count"] += 1
+            b["net_pnl"] += t.pnl
+            if t.pnl > 0:
+                b["wins"] += 1
+        for session in ("asian", "london", "ny_overlap"):
+            b = per_session.get(session, {"count": 0, "net_pnl": 0.0, "wins": 0})
+            wr = b["wins"] / b["count"] if b["count"] else 0.0
+            print(f"  {session:12s} count={b['count']:3d} net_pnl={b['net_pnl']:10.2f} win_rate={wr:.3f}")
+
+        print(f"[{instrument}/{strategy_name}] A5(d) duty cycle + rollover cost share")
+        dc = momentum_duty_cycle_and_rollover_share(trades, instrument, cost_model, account_currency, conversion_series)
+        import gross_vs_net  # noqa: E402 -- sibling script, same sys.path.insert pattern as rvg above
+
+        gross, gross_count = gross_vs_net.gross_stitched_pnl(instrument, strategy_name, window_chosen_params)
+        net = sum(t.pnl for t in trades)
+        total_cost = gross - net  # positive => costs reduced pnl by this much overall
+        rollover_cost_magnitude = -dc["total_rollover_cost"]  # total_rollover_cost is a pnl CONTRIBUTION (negative=drag); flip to match total_cost's "positive=cost" convention
+        rollover_share = (rollover_cost_magnitude / total_cost) if total_cost != 0 else float("nan")
+        print(
+            f"  duty_cycle={dc['duty_cycle']:.1%} (held {dc['held_seconds']/86400:.1f}d of "
+            f"{dc['span_seconds']/86400:.1f}d stitched OOS span)"
+        )
+        print(
+            f"  gross={gross:.2f} ({gross_count} trades) net={net:.2f} total_cost={total_cost:.2f} "
+            f"rollover_cost={dc['total_rollover_cost']:.2f} rollover_share_of_total_cost={rollover_share:.1%}"
+        )
+        print(
+            "  A5(b) Wednesday-deferral convergence note: the uniform-daily-rate rollover "
+            "approximation (ROADMAP.md Deferred item) understates Wednesday / overstates "
+            "every other weekday, but a hold spanning one or more FULL weeks sums those "
+            "errors back toward the correct weekly total -- the approximation's error "
+            "SHRINKS as a fraction of total rollover cost the longer a hold runs. Multi-week "
+            "momentum holds are the case this approximation converges best on, not worst."
+        )
 
     print(f"[{instrument}/{strategy_name}] DONE\n", flush=True)
 

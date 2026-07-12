@@ -68,6 +68,7 @@ from bot.data.cache import CandleCache
 from bot.indicators.core import atr as _atr
 from bot.indicators.core import bollinger_bands as _bollinger_bands
 from bot.regime.classifier import RegimeClassifier, RegimeState
+from bot.strategies.momentum import Momentum
 from bot.strategies.range_reversion import RangeReversion
 from bot.strategies.squeeze_breakout import SqueezeBreakout
 from bot.strategies.trend_pullback import TrendPullback
@@ -204,6 +205,52 @@ def _build_param_grid_squeeze_breakout(base_params: dict) -> list[dict]:
     return grid
 
 
+# ---------------------------------------------------------------------------
+# momentum param grid (TRADING-RULES §6, 2026-07-12 hearing, slot 1 -- new)
+# ---------------------------------------------------------------------------
+
+# Pre-declared N grid (spec-mapping (1)): {20, 60, 120} trading days, searched
+# per-window IS-only, same winner's-curse guard as every other strategy's grid.
+# A6 scope statement: this hearing tests short-horizon momentum (effective
+# N in {20, 60}) -- 120 stays in the grid (not silently dropped) but is
+# structurally near-untestable under this window's IS sizing (see is_bars/
+# oos_bars below); flag, don't hide, in the eventual report.
+_MOM_N_GRID = [20, 60, 120]
+
+# N belongs in the stability sweep (A8) -- it IS the signal, unlike the other
+# three playbooks' excluded bar-count params. bot.backtest.stability.
+# perturb_one_at_a_time now rounds int-typed values instead of crashing on a
+# float lookback, so "n" can sit alongside the float exit params here.
+_MOM_STABILITY_KEYS = [
+    "n",
+    "sl_atr_mult",
+    "exit.trail_atr_mult",
+    "exit.partial_at_r",
+]
+_MOM_SIMPLEX_GROUPS: list[list[str]] = []  # no score_weights -- signal-only, §1.1 exemption
+
+
+def _build_param_grid_momentum(base_params: dict) -> list[dict]:
+    grid = []
+    for n in _MOM_N_GRID:
+        candidate = copy.deepcopy(base_params)
+        candidate["n"] = n
+        grid.append(candidate)
+    return grid
+
+
+def _momentum_params_key(params: dict) -> tuple:
+    """Momentum's grid varies exactly one scalar (n) -- no score_weights to fold
+    in, unlike _params_key below. Kept separate rather than special-cased inside
+    _params_key so that function's score_weights assumption stays a real
+    invariant for the three strategies that actually have one."""
+    return (params["n"],)
+
+
+def _describe_momentum_params(params: dict) -> str:
+    return f"n={params['n']} sl_atr_mult={params['sl_atr_mult']}"
+
+
 def classify_threshold_regime(weights: dict, threshold: float) -> str:
     """HANDOFF.md disposition 1: classify a binary-2-component (threshold, weights)
     choice into the discrete effective regime it produces. Only meaningful for
@@ -270,6 +317,21 @@ class _StrategySpec:
     simplex_groups: list[list[str]]
     build_param_grid: Callable[[dict], list[dict]]
     classify_window: Callable[[WalkForwardWindow], str] | None = None
+    # Overrides below default to None -- the three original playbooks fall back to
+    # defaults.timeframe_htf/ltf and the module-level _IS_BARS/_OOS_BARS exactly as
+    # before (zero behavior change). momentum is the first strategy whose own
+    # anchor:execution TF pair (D/H4) and window sizing differ from that shared
+    # default (TRADING-RULES §6, 2026-07-12 hearing).
+    htf_gran: str | None = None
+    ltf_gran: str | None = None
+    is_bars: int | None = None
+    oos_bars: int | None = None
+    # params_key_fn/describe_params default to the score_weights-based helpers below
+    # (every strategy through squeeze_breakout has one) -- momentum is the first
+    # strategy without score_weights (signal-only, §1.1 exemption) and supplies its
+    # own single-scalar (n) versions instead.
+    params_key_fn: Callable[[dict], tuple] | None = None
+    describe_params: Callable[[dict], str] | None = None
 
 
 _STRATEGIES: dict[str, _StrategySpec] = {
@@ -303,6 +365,25 @@ _STRATEGIES: dict[str, _StrategySpec] = {
             w.chosen_params["score_weights"], w.chosen_params["entry_threshold"]
         ),
     ),
+    "momentum": _StrategySpec(
+        name="momentum",
+        strategy_class=Momentum,
+        params_key="momentum_params",
+        stability_keys=_MOM_STABILITY_KEYS,
+        simplex_groups=_MOM_SIMPLEX_GROUPS,
+        build_param_grid=_build_param_grid_momentum,
+        # D:H4 = 6:1, inside §2's 4-6:1 anchor:execution law (TRADING-RULES §6,
+        # 2026-07-12 hearing, spec-mapping (3)).
+        htf_gran="D",
+        ltf_gran="H4",
+        # Scaled proportionally from the H1 convention (is_bars=3000/oos_bars=1000
+        # over ~13,000 H1 bars/2yr, ~4 rolled windows) to H4's ~4x lower bar density
+        # -- same window count, same IS/OOS ratio, not a new law.
+        is_bars=750,
+        oos_bars=250,
+        params_key_fn=_momentum_params_key,
+        describe_params=_describe_momentum_params,
+    ),
 }
 
 
@@ -316,12 +397,15 @@ def _params_key(params: dict) -> tuple:
     return (params["entry_threshold"],) + tuple(sorted(w.items()))
 
 
-def most_common_params(windows) -> tuple[dict, int, int]:
+def most_common_params(windows, key_fn: Callable[[dict], tuple] = _params_key) -> tuple[dict, int, int]:
     """Mode across walk-forward windows' chosen_params. Returns (representative_params,
-    mode_count, total_windows) -- caller decides how to report a weak plurality."""
-    keys = [_params_key(w.chosen_params) for w in windows]
+    mode_count, total_windows) -- caller decides how to report a weak plurality.
+    key_fn defaults to the score_weights-based grouping every strategy through
+    squeeze_breakout uses; momentum passes _momentum_params_key (single-scalar n,
+    no score_weights) via its _StrategySpec.params_key_fn."""
+    keys = [key_fn(w.chosen_params) for w in windows]
     mode_key, mode_count = Counter(keys).most_common(1)[0]
-    representative = next(w.chosen_params for w in windows if _params_key(w.chosen_params) == mode_key)
+    representative = next(w.chosen_params for w in windows if key_fn(w.chosen_params) == mode_key)
     return representative, mode_count, len(windows)
 
 
@@ -409,7 +493,14 @@ def run_gates_for_pair(
     regime_params = defaults["regime_params"]
     strategy_params = defaults[spec.params_key]
     cost_model = cost_model_override if cost_model_override is not None else raw["instruments"][instrument]["cost_model"]
-    htf_gran, ltf_gran = defaults["timeframe_htf"], defaults["timeframe_ltf"]
+    htf_gran = spec.htf_gran or defaults["timeframe_htf"]
+    ltf_gran = spec.ltf_gran or defaults["timeframe_ltf"]
+    is_bars = spec.is_bars or _IS_BARS
+    oos_bars = spec.oos_bars or _OOS_BARS
+    describe_params = spec.describe_params or (
+        lambda p: f"entry_threshold={p['entry_threshold']} score_weights={p['score_weights']}"
+    )
+    params_key_fn = spec.params_key_fn or _params_key
 
     cache = CandleCache(_CACHE_DIR)
     htf_df = cache.load(instrument, htf_gran)
@@ -439,8 +530,8 @@ def run_gates_for_pair(
         flush=True,
     )
 
-    print(f"[{instrument}/{spec.name}] gate 3: walk-forward (is_bars={_IS_BARS}, oos_bars={_OOS_BARS}) ...", flush=True)
-    wf_report = run_walk_forward(ltf_df, htf_df, run_fn, param_grid, is_bars=_IS_BARS, oos_bars=_OOS_BARS)
+    print(f"[{instrument}/{spec.name}] gate 3: walk-forward (is_bars={is_bars}, oos_bars={oos_bars}) ...", flush=True)
+    wf_report = run_walk_forward(ltf_df, htf_df, run_fn, param_grid, is_bars=is_bars, oos_bars=oos_bars)
     print(
         f"[{instrument}/{spec.name}] gate 3 done: {len(wf_report.windows)} windows, "
         f"stitched trade_count={wf_report.stitched_metrics['trade_count']}, "
@@ -448,18 +539,14 @@ def run_gates_for_pair(
         flush=True,
     )
 
-    representative_params, mode_count, n_windows = most_common_params(wf_report.windows)
+    representative_params, mode_count, n_windows = most_common_params(wf_report.windows, key_fn=params_key_fn)
     print(
         f"[{instrument}/{spec.name}] per-window chosen params (mode wins {mode_count}/{n_windows} windows): "
-        f"entry_threshold={representative_params['entry_threshold']} "
-        f"score_weights={representative_params['score_weights']}",
+        f"{describe_params(representative_params)}",
         flush=True,
     )
     for w in wf_report.windows:
-        line = (
-            f"    window {w.window_index}: entry_threshold={w.chosen_params['entry_threshold']} "
-            f"score_weights={w.chosen_params['score_weights']}"
-        )
+        line = f"    window {w.window_index}: {describe_params(w.chosen_params)}"
         if spec.classify_window is not None:
             line += f"  -> {spec.classify_window(w)}"
         print(line)
@@ -586,6 +673,78 @@ def compute_hysteresis_excluded(
     }
 
 
+def compute_momentum_signflip_diagnostic(windows: list[WalkForwardWindow], htf_df: pd.DataFrame) -> dict:
+    """
+    TRADING-RULES §6 (2026-07-12, amendment A3): split LOSING stitched OOS trades by
+    whether the D-signal's own sign had flipped against the open position before its
+    exit. Uses each window's own frozen chosen_params["n"] (never the provisional
+    yaml default) -- same "frozen params" standard squeeze_breakout's
+    compute_hysteresis_excluded uses above. Sign-flipped losses implicate the
+    ATR-trail exit approximation (names signal-flip exit as a concrete, scoped
+    revival mechanism if this hearing FAILs); sign-intact losses implicate the
+    thesis itself.
+
+    A7 correction: also tags each losing trade as a same-direction re-entry CHAIN
+    member (immediately preceded, within its own window's OOS trade list ordered by
+    entry_ts, by another trade of the SAME direction) vs. a fresh directional entry.
+    Chained losses are sign-intact BY CONSTRUCTION (the position only re-entered
+    because the sign hadn't flipped) -- a choppy-but-trending period mechanically
+    stacks losses into the sign-intact bucket via repeated stop-outs, independent of
+    whether continuation is actually right. This split must be read alongside the
+    sign-flipped/sign-intact split, not after it.
+    """
+    htf_times = htf_df["time"].to_numpy()
+    htf_close = htf_df["close"]
+
+    sign_flipped: list = []
+    sign_intact_chained: list = []
+    sign_intact_fresh: list = []
+    excluded_insufficient_history: int = 0
+    excluded_exact_zero_at_exit: int = 0
+
+    for w in windows:
+        n = w.chosen_params["n"]
+        trades_sorted = sorted(w.oos.trades, key=lambda t: t.entry_ts)
+        prev_direction = None
+        for t in trades_sorted:
+            is_chained = prev_direction is not None and t.direction == prev_direction
+            prev_direction = t.direction
+
+            if t.pnl >= 0:
+                continue  # only losing trades are split (A3's own scope)
+
+            htf_pos = int(htf_times.searchsorted(t.exit_ts, side="right")) - 1
+            if htf_pos < n:
+                excluded_insufficient_history += 1
+                continue  # insufficient D history to evaluate at exit -- exclude, don't guess
+
+            window_close = htf_close.iloc[: htf_pos + 1]
+            value_at_exit = window_close.iloc[-1] / window_close.iloc[-1 - n] - 1.0
+            if value_at_exit == 0.0:
+                excluded_exact_zero_at_exit += 1
+                continue  # ambiguous -- exclude rather than force a bucket
+            sign_at_exit = "long" if value_at_exit > 0 else "short"
+
+            if sign_at_exit == t.direction:
+                (sign_intact_chained if is_chained else sign_intact_fresh).append(t)
+            else:
+                sign_flipped.append(t)
+
+    sign_intact = sign_intact_chained + sign_intact_fresh
+    return {
+        "sign_flipped_count": len(sign_flipped),
+        "sign_flipped_pnl": sum(t.pnl for t in sign_flipped),
+        "sign_intact_count": len(sign_intact),
+        "sign_intact_pnl": sum(t.pnl for t in sign_intact),
+        "sign_intact_chained_count": len(sign_intact_chained),
+        "sign_intact_chained_pnl": sum(t.pnl for t in sign_intact_chained),
+        "sign_intact_fresh_count": len(sign_intact_fresh),
+        "sign_intact_fresh_pnl": sum(t.pnl for t in sign_intact_fresh),
+        "excluded_insufficient_history": excluded_insufficient_history,
+        "excluded_exact_zero_at_exit": excluded_exact_zero_at_exit,
+    }
+
+
 if __name__ == "__main__":
     instrument_arg = sys.argv[1] if len(sys.argv) > 1 else "EUR_USD"
     strategy_arg = sys.argv[2] if len(sys.argv) > 2 else "trend_pullback"
@@ -640,4 +799,61 @@ if __name__ == "__main__":
             "AND hysteresis_excluded is large relative to fired, this routes to §2 "
             "regime-routing territory (a Change-Log candidate for a future session) -- "
             "NOT the trigger, NOT the revival budget, NOT an M15 comparison."
+        )
+
+    if strategy_arg == "momentum":
+        # A6 scope statement (TRADING-RULES §6, 2026-07-12): this hearing tests
+        # short-horizon momentum (effective N in {20, 60}) -- 120 is structurally
+        # near-untestable under is_bars=750 H4 (~125 D-bars): a fixed-width ROLLING
+        # IS window means every window, not just the first, has only ~5 D-bars of
+        # actual signal after N=120's own warmup. Flag plainly, don't hide.
+        n_wins = Counter(w.chosen_params["n"] for w in wf.windows)
+        print()
+        print(
+            f"A6 scope statement: N-grid window wins across {len(wf.windows)} walk-forward "
+            f"windows: {dict(sorted(n_wins.items()))}. is_bars=750 H4 (~125 D-bars) means "
+            f"N=120's own warmup consumes ~120 of every window's ~125 D-bars -- near-"
+            f"untestable BY CONSTRUCTION in every window, not just the first. This hearing's "
+            f"scope is short-horizon momentum (effective N in {{20, 60}}); the literature's "
+            f"canonical ~252-trading-day lookback is untestable on this data window at all. "
+            f"A FAIL below is scoped to short-horizon momentum, not the time-series-momentum "
+            f"thesis in general -- TRADING-RULES §6's renewal clause (>=12mo new candles) is "
+            f"the lawful path to a longer-lookback hearing later."
+        )
+
+        # A5(a): the funnel is expected to show consulted~=fired with near-misses~=0 --
+        # the honest shape of an always-in, signal-only strategy (confidence_score fixed
+        # 1.0, no confluence score to produce graded near-misses). Pre-framed here so a
+        # future reader doesn't misread it as a broken funnel or a missing veto layer.
+        print()
+        print(
+            "A5(a) funnel-framing note: momentum is signal-only (TRADING-RULES §1.1 "
+            "exemption) -- expect consulted~=fired with near-misses~=0 in "
+            "scripts/diagnose_gates.py's funnel exhibit. That is the correct, honest shape "
+            "for an always-in strategy with no confluence score, not a broken funnel."
+        )
+
+        # A3/A7: pre-registered trail-exit sign-flip diagnostic.
+        diag = compute_momentum_signflip_diagnostic(wf.windows, result["htf_df"])
+        print()
+        print("A3 trail-exit sign-flip diagnostic (losing stitched OOS trades only, per-window frozen n):")
+        print(
+            f"  sign_flipped:        count={diag['sign_flipped_count']:4d} pnl={diag['sign_flipped_pnl']:10.2f}  "
+            "(implicates the ATR-trail exit approximation -- signal-flip exit is a named, scoped revival mechanism if this hearing FAILs)"
+        )
+        print(
+            f"  sign_intact (total):  count={diag['sign_intact_count']:4d} pnl={diag['sign_intact_pnl']:10.2f}  "
+            "(implicates the thesis itself -- SUBJECT TO the chained/fresh split below, A7 correction)"
+        )
+        print(
+            f"    sign_intact_chained: count={diag['sign_intact_chained_count']:4d} pnl={diag['sign_intact_chained_pnl']:10.2f}  "
+            "(re-entry chain member -- sign-intact BY CONSTRUCTION, not independent thesis-failure evidence)"
+        )
+        print(
+            f"    sign_intact_fresh:   count={diag['sign_intact_fresh_count']:4d} pnl={diag['sign_intact_fresh_pnl']:10.2f}  "
+            "(first loss in its directional run -- the cleaner thesis-failure signal)"
+        )
+        print(
+            f"  excluded: insufficient_history={diag['excluded_insufficient_history']} "
+            f"exact_zero_at_exit={diag['excluded_exact_zero_at_exit']}"
         )

@@ -60,6 +60,22 @@ class RegimeResult:
     without §5 validation.
     """
     bars_in_regime: int
+    htf_window: pd.DataFrame | None = None
+    """
+    TRADING-RULES §6 (2026-07-12, D1/H4 momentum hearing): the anchor-TF window
+    AS OF this classify() call, i.e. htf_window.iloc[:htf_pos+1] from the engine's
+    own caller — ending at the last CLOSED anchor candle, never a forming one
+    (Prime Directive 3), unchanged for every LTF bar until the next anchor close.
+    Lets a strategy compute its own signal directly from raw anchor-TF price
+    history (not just the classified RegimeState enum) without changing
+    generate_signal()'s contracted (window, regime) signature — the Strategy
+    Protocol is a CLAUDE.md Core Interface, "do not drift".
+    READ-ONLY: this is a reference into engine/classifier state, not a copy.
+    Strategy code must never mutate it in place. Defaulted to None so every
+    existing positional 3-arg RegimeResult(...) construction (trend_pullback/
+    range_reversion/squeeze_breakout tests, test_validation_defendants.py) keeps
+    working unchanged.
+    """
 
 
 class RegimeClassifier:
@@ -112,12 +128,12 @@ class RegimeClassifier:
             self._current_regime = boot
             self._bars_in_regime = 1
             self._last_confidence = 0.0 if raw_regime is _INDETERMINATE else raw_confidence
-            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime, htf_window)
 
         # Gray zone: hold regime, still count the bar
         if raw_regime is _INDETERMINATE:
             self._bars_in_regime += 1
-            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime, htf_window)
 
         # Same regime: reinforce, clear any pending candidate
         if raw_regime == self._current_regime:
@@ -125,7 +141,7 @@ class RegimeClassifier:
             self._last_confidence = raw_confidence
             self._candidate_regime = None
             self._candidate_bars = 0
-            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
+            return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime, htf_window)
 
         # Different regime: advance switch candidate
         if raw_regime == self._candidate_regime:
@@ -151,7 +167,7 @@ class RegimeClassifier:
         else:
             self._bars_in_regime += 1
 
-        return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime)
+        return RegimeResult(self._current_regime, self._last_confidence, self._bars_in_regime, htf_window)
 
     # ------------------------------------------------------------------
     # Internal

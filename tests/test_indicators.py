@@ -38,6 +38,7 @@ from bot.indicators.core import (
     heikin_ashi_bearish_flip,
     heikin_ashi_bullish_flip,
     rsi,
+    trailing_return,
     true_range,
 )
 
@@ -568,3 +569,33 @@ class TestBbBreakout:
         upper = pd.Series([float("nan"), 1.02])
         result = bb_breakout_long(close, upper)
         assert result.iloc[0] == False
+
+
+# ---------------------------------------------------------------------------
+# Trailing return (§6, 2026-07-12 D1/H4 time-series momentum hearing)
+# ---------------------------------------------------------------------------
+
+class TestTrailingReturn:
+    def test_positive_return_at_n(self) -> None:
+        """close[n]/close[0] - 1, exact hand calculation."""
+        close = pd.Series([100.0, 101.0, 102.0, 103.0, 110.0])
+        result = trailing_return(close, 4)
+        assert result.iloc[4] == pytest.approx(0.10, abs=1e-10)
+
+    def test_negative_return_at_n(self) -> None:
+        close = pd.Series([100.0, 99.0, 98.0, 97.0, 90.0])
+        result = trailing_return(close, 4)
+        assert result.iloc[4] == pytest.approx(-0.10, abs=1e-10)
+
+    def test_zero_return_is_exactly_zero_not_nan(self) -> None:
+        """A flat trailing window scores 0.0 (no signal), distinct from NaN (warmup)."""
+        close = pd.Series([100.0, 105.0, 95.0, 102.0, 100.0])
+        result = trailing_return(close, 4)
+        assert result.iloc[4] == pytest.approx(0.0, abs=1e-10)
+
+    def test_first_n_rows_are_nan(self) -> None:
+        """Insufficient trailing history -> NaN, not a silently wrong value."""
+        close = pd.Series([100.0, 101.0, 102.0])
+        result = trailing_return(close, 2)
+        assert result.iloc[0:2].isna().all()
+        assert not pd.isna(result.iloc[2])

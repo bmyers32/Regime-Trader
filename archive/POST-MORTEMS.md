@@ -518,3 +518,152 @@ TRADING-RULES.md EXPERIMENTAL clauses were reverted to Phase-7-closed state afte
 verdict (code must not contradict law, and law does not carry this mechanism now that
 it FAILED) — this entry, BRAIN.md's two new wisdom entries, and HANDOFF.md's close-out
 are the permanent record of what was tried and why it failed.
+
+## §6 D1/H4 time-series momentum post-mortem (CLOSED 2026-07-12 — FAIL, §6 slot 1 of 3 SPENT; scoped to short-horizon momentum, effective N∈{20,60})
+**Idea:** TRADING-RULES §6 slot 1 (pre-claimed, external-evidence thesis, Moskowitz/
+Ooi/Pedersen lineage) — direction = sign of trailing N-day D-close return, N searched
+per-window IS-only from {20, 60, 120}, signal-only (§1.1 exemption, this hearing's own
+amendment, dated same day), D1 anchor / H4 execution, ATR/Chandelier trail exit reused
+as-is. Full spec-mapping (signal/gate-score/timeframe-exit/rollover/pairs) plus 8
+user-approved pre-code amendments (A1–A8) recorded in HANDOFF.md before any strategy
+code existed — see that record for the complete resolved spec and reasoning; not
+reproduced here.
+
+**Verdict:** FAILED TRADING-RULES §5 gates 3/4/6 on both target pairs (EUR_USD,
+GBP_JPY), decisively, on real ≥2yr D/H4 OANDA history + real cost_model. NOT a
+gate-3 floor-miss (TRADING-RULES §6 amendment A4's "thin-at-D1" disposition) — both
+pairs comfortably cleared the 20-trade floor (109, 105 stitched OOS trades) via
+trail-exit re-entry chains inflating count above the raw sign-flip floor exactly as
+amendment A7 predicted before any number existed.
+
+EUR_USD: gate 3 net_pnl=-637.07 (109 trades). Gate 4 base_metric=4.61 (barely
+positive pre-perturbation) — the "n" neighbor (-10%) flips sign to -171.03, the
+sharpest deviation of any perturbed param (sl_atr_mult/trail_atr_mult/partial_at_r
+all deviate less). Gate 6: observed_net_pnl=-637.07, bootstrap
+P(net_pnl≤0)=86.9%, robust negative result.
+
+GBP_JPY: gate 3 net_pnl=-108.27 (105 trades). Gate 4 base_metric=352.74 (real,
+non-trivial positive pre-perturbation) — same signature: "n" (-10%) flips sign to
+-273.69, the sharpest deviation. Gate 6: observed_net_pnl=-108.27, bootstrap
+P(net_pnl≤0)=59.4% — closer to a coin flip than EUR_USD's result, but still fails
+the ≤5% robustness bar by a wide margin.
+
+**N-grid window wins (per-window frozen params, walk-forward's own IS selection):**
+EUR_USD {20: 6, 60: 3, 120: 1} — short-horizon N dominates, as amendment A6
+anticipated. GBP_JPY {20: 1, 60: 4, 120: 5} — N=120 actually won the plurality
+here DESPITE amendment A6's predicted near-untestability (is_bars=750 H4 ≈125
+D-bars means N=120's own warmup consumes ~120 of every window's ~125 D-bars, in
+EVERY window, not just the first — this reasoning holds regardless of which N wins
+a given pair's mode). Gate 4's own stability sweep is the corroborating evidence
+that A6's concern was real regardless of mode-selection frequency: "n" is the
+single sharpest-deviating, sign-flipping neighbor in BOTH pairs' stability sweeps —
+not just at N=120, but at whichever N each pair's representative config actually
+used (EUR_USD's representative was N=20). **This means the FAIL is not confined to
+N=120's known handicap — N=20/60 (the hearing's own "short-horizon" scope) are
+ALSO the most fragile dimension in the search, on both pairs.** Amendment A6's
+scoping caveat does not rescue this verdict.
+
+**Gross-vs-net failure-mode classification (scripts/gross_vs_net.py, standard
+exhibit):** EUR_USD gross=-349.23 (116 trades) vs net=-637.07 — **no-edge**
+(gross≤0). GBP_JPY gross=+203.80 (106 trades) vs net=-108.27 — **COST-DOMINATED**
+(gross>0, net<0): a genuine pre-cost edge existed and costs erased it — the two
+target pairs land in DIFFERENT failure-mode buckets, same as range_reversion's
+EUR_USD (no-edge) vs EUR_GBP (cost-dominated) split in Phase 6.
+
+**A5(d) duty cycle + rollover cost share (new exhibit, first exercised this
+hearing — multi-week holds make it informative for the first time):** EUR_USD
+duty_cycle=85.7% (held 500.8d of a 584.3d stitched OOS span), rollover_cost=-133.98
+(a net drag), 46.5% of EUR_USD's total $287.84 cost drag. GBP_JPY duty_cycle=83.7%
+(481.0d/574.8d), rollover_cost=+55.47 — a net CREDIT here, not a cost, partially
+offsetting GBP_JPY's $312.07 spread/slippage drag (rollover_share reported as
+-17.8%, the negative sign itself being the honest signal that rollover helped
+rather than hurt for this pair/direction mix). Confirms the hearing's own framing:
+rollover is genuinely first-order at this hold length, in both directions.
+**A5(b) Wednesday-deferral convergence note:** the uniform-daily-rate rollover
+approximation (ROADMAP.md Deferred item) understates Wednesday/overstates every
+other weekday, but full-week-spanning holds (duty cycle >80% here) sum those
+errors back toward the correct weekly total — the approximation's error SHRINKS
+as a fraction of total cost the longer a hold runs, the opposite of what
+"rollover is now first-order" might suggest read alone.
+
+**A3/A7 pre-registered trail-exit sign-flip diagnostic (losing stitched OOS
+trades, per-window frozen n):** EUR_USD: sign_flipped=12 trades/-628.39;
+sign_intact=47 trades/-2449.06, of which chained=35/-1828.90 and fresh=12/-620.16.
+GBP_JPY: sign_flipped=9/-464.29; sign_intact=41/-2093.04, of which
+chained=33/-1673.67 and fresh=8/-419.37. Amendment A7's predicted mechanical
+inflation is confirmed in both pairs — the sign_intact bucket is dominated by
+re-entry-chain losses (35/47 EUR_USD, 33/41 GBP_JPY), not independent
+thesis-failure evidence. **After removing chains, "fresh" sign-intact losses are
+close in both count AND magnitude to sign-flipped losses in both pairs**
+(EUR_USD 12/-620.16 vs 12/-628.39; GBP_JPY 8/-419.37 vs 9/-464.29) — the split
+does NOT show sign-flipped losses dominating, which is the pattern that would
+have pointed decisively at signal-flip exit (amendment A3's named, scoped revival
+mechanism) as the fix. **This is a genuine null result on the revival-mechanism
+question, not just on the base thesis** — the diagnostic does not hand this
+hearing's natural next attempt a clear target.
+
+**A5(a) funnel (both pairs, exactly as predicted before any number existed):**
+EUR_USD consulted=131=gates_passed=threshold_cleared=fired, GBP_JPY
+consulted=123=gates_passed=threshold_cleared=fired — confidence_score constant
+1.0 both pairs (stdev=0.0000). The honest shape of an always-in, signal-only
+strategy per the §1.1 exemption — not the v3 always-true-filter failure pattern,
+because there is no threshold being calibrated here to begin with (§1.7's
+pass-rate law is about a threshold's own empirical firing rate; momentum has no
+threshold to check).
+
+**Per-regime attribution (gate 5, informational):** EUR_USD's worst regimes were
+TRENDING_UP (-364.63, 13 trades, 30.8% win) and TRENDING_DOWN (-340.13, 14, 28.6%)
+— momentum losing money specifically IN the classified-trending state is a
+notable irony worth flagging, not acted on (regime is not a gate here by design).
+GBP_JPY's worst was TRENDING_UP (-205.00, 11, 36.4%). Both pairs' best regime was
+RANGING (EUR_USD +263.63/33/54.5%; GBP_JPY +87.07/46/56.5%).
+
+**Per-session attribution (informational, no pre-registered follow-up trigger
+this hearing):** EUR_USD losses concentrated in ny_overlap (-687.13, 51 trades);
+asian was the only positive session (+88.59, 37). GBP_JPY losses also
+concentrated in ny_overlap (-351.05, 41); asian was strongly positive (+330.66,
+32, 62.5% win). No follow-up run — no pre-registered trigger was defined for
+this hearing (unlike range_reversion's Asian-session question).
+
+**Reasoning it's closed, not iterated:** decisive on both target pairs across all
+three gates; gate 4's own stability sweep — not just amendment A6's a priori
+warmup-handicap reasoning — independently identifies N as the single most
+fragile dimension in the search for BOTH pairs, at whichever N each pair actually
+used; gate 6's bootstrap is robust for EUR_USD (86.9%) and clears the failure bar
+even at GBP_JPY's weaker 59.4%. The A3/A7 diagnostic — pre-registered specifically
+to hand a future revival attempt a concrete target — does not find one: sign-flip
+exit is not evidently the fix (the split is balanced, not flip-dominated), and
+neither is a longer/shorter N alone (fragility at short-horizon N is the same
+signature gate 4 found at N=120). Per TRADING-RULES §6 amendment A4: this is a
+real evaluated FAIL, not a floor-miss, so it spends slot 1 outright — no
+ambiguity about whether the disposition below applies.
+
+**Scope of this FAIL (amendment A6):** confined to short-horizon (effective
+N∈{20,60}) D1/H4 time-series momentum on these two pairs' cost/regime profile.
+The literature's canonical ~12-month lookback was never tested (untestable on
+this data window's ~2yr history under any window sizing that also produces a
+usable OOS trade count) — TRADING-RULES §6's own renewal clause (≥12mo of new
+candles) is the lawful path to that hearing later, not a re-try now. Re-entry
+per any future revival would need to name a genuinely new edge-thesis mechanism
+per the existing revival-budget law (TRADING-RULES §6, 2026-07-10 entry) — this
+post-mortem does not hand it one on a plate; the A3/A7 diagnostic's null result
+on signal-flip exit is itself part of the record a future revival attempt must
+reckon with, not route around.
+
+**Untested pairs:** AUD_USD, EUR_GBP, USD_JPY, GBP_USD never run under this spec —
+same "others follow only on evidence" discipline as every prior playbook; both
+target pairs' FAILs were decisive enough that running more pairs is not expected
+to be informative.
+
+**Files touched this session:** `TRADING-RULES.md` (§1.1 exemption, two new §6
+entries), `HANDOFF.md` (full spec-mapping + all 8 amendments recorded pre-code),
+`scripts/fetch_history.py` (granularity parameterization, commit `0a38fe6`),
+`bot/indicators/core.py` (`trailing_return`), `bot/regime/classifier.py`
+(`RegimeResult.htf_window`, defaulted, backward-compatible), `bot/backtest/
+stability.py` (int-aware perturbation rounding, A8), `bot/strategies/momentum.py`
+(new), `bot/config/instruments.yaml` (`momentum_params` defaults +
+`momentum_calibration` blocks, EUR_USD/GBP_JPY), `scripts/{run_validation_gates,
+diagnose_gates,gross_vs_net}.py` (momentum registry entry + per-strategy TF/
+window-sizing generalization + A3/A5/A6 diagnostics), `tests/{test_indicators,
+test_regime,test_backtest,test_stability,test_momentum}.py` (new/extended
+coverage, structure tests both directions).

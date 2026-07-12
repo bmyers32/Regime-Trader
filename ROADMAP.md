@@ -97,3 +97,17 @@ all 3 horizons); (iii) EXPANSION→RANGING and (iv) London-open after Asian rang
 also cleared both bars but are recorded and closed, not awarded (cap = one
 winner), lawfully re-census-eligible once the data window renews (≥12mo).
 → archive/CENSUS-PIVOT-CYCLE.md.
+
+**D1/H4 time-series momentum (CLOSED 2026-07-12, §6 slot 1 of 3 SPENT):** FAIL §5
+gates 3/4/6, EUR_USD/GBP_JPY, decisively — NOT a floor-miss (109/105 stitched OOS
+trades, well clear of the 20-trade floor). Gross-vs-net split across failure modes
+(EUR_USD no-edge, GBP_JPY cost-dominated); gate 4 independently flags N itself as
+the sharpest, sign-flipping stability dimension in both pairs, at whichever N each
+pair actually used — not confined to N=120's known warmup handicap. Pre-registered
+A3/A7 sign-flip diagnostic found a genuine null result on signal-flip exit as a
+revival mechanism (the split is balanced, not flip-dominated) — this FAIL does not
+hand a future revival attempt an obvious target. Scoped to short-horizon momentum
+(effective N∈{20,60}); the literature's ~12-month lookback was never tested
+(untestable on this data window) — TRADING-RULES §6's renewal clause (≥12mo new
+candles) is the lawful path later, not a re-try now.
+→ archive/POST-MORTEMS.md §6.

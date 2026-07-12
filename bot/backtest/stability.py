@@ -68,12 +68,25 @@ class StabilityResult:
 
 
 def perturb_one_at_a_time(base_params: dict, keys: list[str], pct: float = 0.10) -> list[dict]:
+    """
+    TRADING-RULES §6 (2026-07-12, A8): int-typed base values round the perturbed
+    float back to the nearest int (e.g. 20 -> 18/22) instead of being excluded from
+    the sweep entirely. Earlier playbooks (trend_pullback/range_reversion/
+    squeeze_breakout) worked around int-typed bar-count params by omitting them
+    from stability_keys -- a real workaround for the float-index crash this
+    produced, but not a reason to exclude an int param when it's the thing actually
+    being validated (momentum's N). Float-typed params are unaffected -- this is
+    strictly additive.
+    """
     neighbors = []
     for key in keys:
         base_value = get_by_path(base_params, key)
         for direction, factor in (("-10%", 1 - pct), ("+10%", 1 + pct)):
+            perturbed = base_value * factor
+            if isinstance(base_value, int):
+                perturbed = round(perturbed)
             neighbors.append(
-                {"key": key, "direction": direction, "params": set_by_path(base_params, key, base_value * factor)}
+                {"key": key, "direction": direction, "params": set_by_path(base_params, key, perturbed)}
             )
     return neighbors
 

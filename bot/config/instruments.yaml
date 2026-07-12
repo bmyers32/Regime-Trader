@@ -150,6 +150,49 @@ defaults:
       trail_atr_period: 22              # standard Chandelier Exit ATR period
       trail_atr_mult: 3.0               # standard Chandelier Exit multiplier
 
+  # momentum strategy params (TRADING-RULES §6, 2026-07-12 D1/H4 hearing, slot 1 of the
+  # pivot-cycle budget, bot/strategies/momentum.py). Signal-only per §1.1's EXEMPTION
+  # (2026-07-12, same date): a single-scoreable-component strategy (sign of trailing
+  # N-day D-close return, nothing else) may skip the weighted-confluence machinery
+  # entirely — entry_threshold below is fixed at 1.0 (not a tunable dial; kept only so
+  # this params dict satisfies scripts/run_validation_gates.py's shared run_fn plumbing,
+  # which reads signal_threshold=params["entry_threshold"] generically across every
+  # registered strategy). N itself is NOT a config value — it's searched per-window
+  # IS-only from the pre-declared set {20, 60, 120} in
+  # scripts/run_validation_gates.py's build_param_grid_momentum (same convention as
+  # trend_pullback's entry_threshold/score_weights grid living in code, not yaml,
+  # winner's-curse guard). n below is a provisional placeholder only (never the value
+  # actually used once the walk-forward runs — the grid always overrides it).
+  #
+  # Exit: SAME partial-at-1R + ATR/Chandelier trail exit_cfg mechanism trend_pullback/
+  # squeeze_breakout use (own numbers below, not copied) — spec-mapping decision
+  # (3): the engine only calls generate_signal() when flat, so neither a time-based
+  # nor signal-flip exit exists without new engine surface; the trail needs none and
+  # already forces the protective stop TRADING-RULES §4 requires regardless of exit
+  # style. trail_atr_period/trail_atr_mult reuse the same Chandelier convention (22/3.0)
+  # every other playbook uses — no reason to invent new smoothing for an identical
+  # mechanism.
+  #
+  # PROVISIONAL (2026-07-12): implements the §6 hearing's spec-mapping with reasonable
+  # defaults. NOT yet empirically validated — sl_atr_mult/trail params need TRADING-
+  # RULES §5 gates 3-4 (walk-forward + parameter-stability, N included via the A8
+  # int-aware rounding fix to bot/backtest/stability.py) once real gates run against
+  # real D/H4 OANDA history + real cost_model. sl_atr_mult=2.0 is a deliberate widening
+  # vs. trend_pullback's 1.75 / squeeze_breakout's 1.5 (both H1-execution, shorter
+  # intended holds) — a multi-week-hold thesis executing on H4 should tolerate routine
+  # H4-scale noise without getting stopped out prematurely; still provisional, subject
+  # to gate 4.
+  momentum_params:
+    n: 60                    # PLACEHOLDER ONLY — always overridden by the per-window IS grid search {20, 60, 120}, see comment above
+    sl_atr_mult: 2.0          # provisional widening vs. shorter-hold playbooks — see calibration_note above
+    entry_threshold: 1.0      # FIXED, not tunable — §1.1 exemption (signal-only, no confluence score); kept only for shared run_fn plumbing
+    exit:
+      partial_fraction: 0.5   # fraction of units closed at partial_at_r — same convention every trailing-exit playbook uses
+      partial_at_r: 1.0       # R-multiple (of the ATR-mult stop distance) that triggers the partial
+      breakeven_after_partial: false  # must earn its way in via walk-forward, never a silent default
+      trail_atr_period: 22    # standard Chandelier Exit ATR period — same as trend_pullback/squeeze_breakout
+      trail_atr_mult: 3.0     # standard Chandelier Exit multiplier — same as trend_pullback/squeeze_breakout
+
   # Cost model (Phase 4, bot/backtest/costs.py + sizing.py). No shared defaults here —
   # per TRADING-RULES §1.7 every threshold ships with a calibration note, and spread/
   # rollover are pair-specific by nature (GBP/JPY spreads nothing like EUR/USD). Each
@@ -235,6 +278,29 @@ instruments:
         reasoning) — running the remaining pairs before those two produce a
         verdict is not expected to be informative. Revisit only on evidence,
         same discipline as Phases 5-6.
+    momentum_calibration:
+      calibration_note: >
+        Uses defaults.momentum_params — no per-pair override. TESTED
+        2026-07-12: TRADING-RULES §5 gates 3/4/6 run on real >=2yr D/H4
+        OANDA history + real cost_model — FAILED decisively. Gate 3: 105
+        stitched OOS trades, net_pnl=-108.27 (not a floor-miss, well clear
+        of the 20-trade floor). Gate 4: base_metric=352.74 (real,
+        non-trivial positive pre-perturbation) — same signature as
+        EUR_USD: "n" (-10%) flips sign to -273.69, the sharpest deviation.
+        Gate 6: bootstrap P(net_pnl<=0)=59.4% — closer to a coin flip than
+        EUR_USD but still fails the <=5% robustness bar by a wide margin.
+        N-grid window wins: {20: 1, 60: 4, 120: 5}. Gross-vs-net
+        (scripts/gross_vs_net.py): gross=+203.80 (106 trades) vs
+        net=-108.27 — COST-DOMINATED (a genuine pre-cost edge existed and
+        costs erased it; the two target pairs land in different
+        failure-mode buckets). Duty cycle 83.7%; rollover_cost=+55.47 (a
+        net CREDIT here, not a cost, partially offsetting the $312.07
+        spread/slippage drag). A3/A7 sign-flip diagnostic (losing trades):
+        sign_flipped=9/-464.29, sign_intact=41/-2093.04 (chained=
+        33/-1673.67, fresh=8/-419.37) — same null-result pattern as
+        EUR_USD on signal-flip exit as a revival mechanism. See
+        archive/POST-MORTEMS.md §6 for the full writeup. Not ship-ready;
+        do not enable.
     cost_model:
       spread_pips:
         asian: 3.9
@@ -379,6 +445,27 @@ instruments:
         it first here would bias toward re-confirming "no structure" rather
         than testing squeeze_breakout's thesis on pairs suited to it. Second
         wave only on evidence.
+    momentum_calibration:
+      calibration_note: >
+        Uses defaults.momentum_params — no per-pair override. TESTED
+        2026-07-12: TRADING-RULES §5 gates 3/4/6 run on real >=2yr D/H4
+        OANDA history + real cost_model — FAILED decisively. Gate 3: 109
+        stitched OOS trades, net_pnl=-637.07 (not a floor-miss, well clear
+        of the 20-trade floor). Gate 4: base_metric=4.61 (barely positive
+        pre-perturbation) — the "n" neighbor (-10%) flips sign to -171.03,
+        the sharpest deviation of any perturbed param. Gate 6: bootstrap
+        P(net_pnl<=0)=86.9%, robust negative result. N-grid window wins:
+        {20: 6, 60: 3, 120: 1}. Gross-vs-net (scripts/gross_vs_net.py):
+        gross=-349.23 (116 trades) vs net=-637.07 — no-edge, not
+        cost-dominated. Duty cycle 85.7%; rollover_cost=-133.98 (46.5% of
+        total $287.84 cost drag — genuinely first-order at this hold
+        length). A3/A7 sign-flip diagnostic (losing trades): sign_flipped=
+        12/-628.39, sign_intact=47/-2449.06 (chained=35/-1828.90,
+        fresh=12/-620.16) — after removing re-entry chains, fresh
+        sign-intact losses are close in count/magnitude to sign-flipped
+        losses (12/-620.16 vs 12/-628.39): a null result on signal-flip
+        exit as an obvious revival mechanism. See archive/POST-MORTEMS.md
+        §6 for the full writeup. Not ship-ready; do not enable.
     cost_model:
       spread_pips:
         asian: 1.6

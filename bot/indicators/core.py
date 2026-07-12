@@ -224,3 +224,13 @@ def bb_breakout_long(close: pd.Series, upper_band: pd.Series) -> pd.Series:
 def bb_breakout_short(close: pd.Series, lower_band: pd.Series) -> pd.Series:
     """Mirror of bb_breakout_long at the lower band (TRADING-RULES §3.3 short side)."""
     return (close < lower_band).fillna(False)
+
+
+def trailing_return(close: pd.Series, n: int) -> pd.Series:
+    """
+    Simple N-bar trailing return: close[t]/close[t-n] - 1. Sign of this value is the
+    momentum playbook's entire signal (TRADING-RULES §6, 2026-07-12 D1/H4 hearing) —
+    no log-return or volatility-adjusted variant, per that hearing's "no indicator
+    zoo" spec-mapping decision. NaN for the first n rows (insufficient history).
+    """
+    return close.pct_change(n)

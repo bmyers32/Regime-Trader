@@ -651,3 +651,90 @@ class TestNearMissSignalFunnel:
         assert "signal_funnel" not in without_log.metrics
         assert len(with_log.trades) == len(without_log.trades)
         assert with_log.metrics["net_pnl"] == pytest.approx(without_log.metrics["net_pnl"])
+
+
+# ---------------------------------------------------------------------------
+# RegimeResult.htf_window no-lookahead (TRADING-RULES §6, 2026-07-12 D1/H4
+# momentum hearing, amendment A2) — the field must end at the last CLOSED
+# anchor candle for the ENTIRE span of LTF bars before the next anchor close,
+# never a forming one, never advancing early.
+# ---------------------------------------------------------------------------
+
+class _HtfWindowSpyStrategy:
+    """Never fires — only records (this ltf bar's own time, htf_window's last
+    time, htf_window's last close, len(htf_window)) on every generate_signal()
+    call, so htf_window's identity/content can be asserted per LTF bar without
+    any position-open/close interference (matches this file's cadence-spy
+    pattern; recording the LTF bar's own time avoids assuming calls start at
+    ltf index 0 -- they only start once the first htf candle has closed)."""
+
+    def __init__(self, warmup: int = 1):
+        self.warmup = warmup
+        self.calls: list[tuple[pd.Timestamp, pd.Timestamp, float, int]] = []
+
+    def generate_signal(self, window: pd.DataFrame, regime: RegimeResult) -> Signal | None:
+        if regime.htf_window is not None:
+            self.calls.append(
+                (
+                    window["time"].iloc[-1],
+                    regime.htf_window["time"].iloc[-1],
+                    regime.htf_window["close"].iloc[-1],
+                    len(regime.htf_window),
+                )
+            )
+        return None
+
+
+def test_htf_window_unchanged_across_ltf_bars_until_next_anchor_close():
+    ratio = 4
+    ltf = _synthetic_ltf(n_bars=200)
+    htf = _aggregate_htf(ltf, ratio=ratio)
+
+    strategy = _HtfWindowSpyStrategy()
+    engine = BacktestEngine(
+        strategy=strategy,
+        regime_classifier=RegimeClassifier(_REGIME_PARAMS),
+        instrument="EUR_USD",
+        account_currency="USD",
+        risk_pct=1.0,
+        starting_equity=10_000.0,
+        cost_cfg=ZERO_COST_MODEL,
+    )
+    engine.run(ltf, htf)
+
+    # Expected last-closed-htf-time per ltf bar time, replicating engine.py's own
+    # searchsorted formula independently (not importing engine internals).
+    htf_times = htf["time"].to_numpy()
+
+    def _expected_last_htf_time(bar_time: pd.Timestamp):
+        htf_pos = int(htf_times.searchsorted(bar_time, side="right")) - 1
+        return htf_times[htf_pos] if htf_pos >= 0 else None
+
+    assert len(strategy.calls) > 0
+    # Calls only start once a htf candle has closed -- confirm they don't start at
+    # ltf bar 0 (that would itself be a bug: no anchor data would exist yet).
+    assert strategy.calls[0][0] != ltf["time"].iloc[0]
+
+    for ltf_bar_time, last_htf_time, last_close, n_rows in strategy.calls:
+        expected = _expected_last_htf_time(ltf_bar_time)
+        assert expected is not None, "spy recorded a call before any htf candle had closed"
+        # htf_window must end EXACTLY at the last closed anchor candle -- never later
+        # (no lookahead) and never earlier (no stale cache leaking past a real close).
+        assert last_htf_time == expected
+        assert last_close == pytest.approx(htf.loc[htf["time"] == expected, "close"].iloc[0])
+
+    # Within one anchor period (same expected last-closed-htf-time), htf_window's
+    # identity (last time + row count) must be IDENTICAL across every ltf bar in
+    # that span -- the signal a strategy derives from it cannot silently drift
+    # mid-period, and must change EXACTLY when the anchor candle rolls over.
+    from itertools import groupby
+
+    grouped = [
+        (key, list(group))
+        for key, group in groupby(strategy.calls, key=lambda c: _expected_last_htf_time(c[0]))
+    ]
+    for _, group in grouped:
+        n_rows_seen = {call[3] for call in group}
+        last_htf_times_seen = {call[1] for call in group}
+        assert len(n_rows_seen) == 1, "htf_window row count changed mid-anchor-period"
+        assert len(last_htf_times_seen) == 1, "htf_window last time changed mid-anchor-period"

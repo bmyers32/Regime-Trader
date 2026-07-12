@@ -137,7 +137,10 @@ def gross_stitched_pnl(instrument: str, strategy_name: str, window_chosen_params
     account_currency = raw.get("account_currency", "USD")
     risk_pct = raw["defaults"]["risk_pct"]
     regime_params = raw["defaults"]["regime_params"]
-    htf_gran, ltf_gran = raw["defaults"]["timeframe_htf"], raw["defaults"]["timeframe_ltf"]
+    htf_gran = spec.htf_gran or raw["defaults"]["timeframe_htf"]
+    ltf_gran = spec.ltf_gran or raw["defaults"]["timeframe_ltf"]
+    is_bars = spec.is_bars or _IS_BARS
+    oos_bars = spec.oos_bars or _OOS_BARS
 
     cache = CandleCache(_CACHE_DIR)
     htf_df = cache.load(instrument, htf_gran)
@@ -145,7 +148,7 @@ def gross_stitched_pnl(instrument: str, strategy_name: str, window_chosen_params
     conversion_series = rvg.load_conversion_series(instrument, account_currency, cache, ltf_gran)
 
     n_bars = len(ltf_df)
-    bounds = generate_window_bounds(n_bars, _IS_BARS, _OOS_BARS)
+    bounds = generate_window_bounds(n_bars, is_bars, oos_bars)
     if len(bounds) != len(window_chosen_params):
         raise RuntimeError(
             f"{instrument}/{strategy_name}: {len(bounds)} recomputed window bounds != "

@@ -37,6 +37,45 @@ def test_perturb_one_at_a_time_values_and_no_mutation():
     assert base == {"sl_atr_mult": 2.0, "entry_threshold": 0.6}
 
 
+def test_perturb_one_at_a_time_int_param_rounds_and_produces_valid_runs():
+    """TRADING-RULES §6 (2026-07-12, A8): an int-typed base value must round the
+    perturbed +/-10% float back to an int, not leave a float that a bar-slicing/
+    lookback operation (e.g. window.iloc[-n:]) would reject with a TypeError. Uses
+    momentum's own N grid values (20/60/120) as the representative int key."""
+    base = {"n": 20, "sl_atr_mult": 1.5}
+    neighbors = perturb_one_at_a_time(base, ["n", "sl_atr_mult"], pct=0.10)
+
+    values = {(n["key"], n["direction"]): get_by_path(n["params"], n["key"]) for n in neighbors}
+    assert values[("n", "-10%")] == 18
+    assert values[("n", "+10%")] == 22
+    assert isinstance(values[("n", "-10%")], int)
+    assert isinstance(values[("n", "+10%")], int)
+    # float-typed key unaffected -- strictly additive fix
+    assert values[("sl_atr_mult", "-10%")] == pytest.approx(1.35)
+    assert base == {"n": 20, "sl_atr_mult": 1.5}  # original untouched
+
+    # No float-index TypeError: the rounded int is actually usable for slicing.
+    dummy_series = list(range(30))
+    for n in ["n"]:
+        for direction in ("-10%", "+10%"):
+            k = values[(n, direction)]
+            dummy_series[-k:]  # would raise TypeError if k were a float
+
+
+def test_perturb_one_at_a_time_int_param_rounds_larger_n_values():
+    base = {"n": 60}
+    neighbors = perturb_one_at_a_time(base, ["n"], pct=0.10)
+    values = {n["direction"]: get_by_path(n["params"], "n") for n in neighbors}
+    assert values["-10%"] == 54
+    assert values["+10%"] == 66
+
+    base_120 = {"n": 120}
+    neighbors_120 = perturb_one_at_a_time(base_120, ["n"], pct=0.10)
+    values_120 = {n["direction"]: get_by_path(n["params"], "n") for n in neighbors_120}
+    assert values_120["-10%"] == 108
+    assert values_120["+10%"] == 132
+
+
 def test_perturb_simplex_pairs_preserves_sum():
     base = {"score_weights": {"a": 0.3, "b": 0.25, "c": 0.25, "d": 0.2}}
     keys = ["score_weights.a", "score_weights.b", "score_weights.c", "score_weights.d"]
