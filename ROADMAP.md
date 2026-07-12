@@ -364,16 +364,17 @@ floor.
 "others follow only on evidence" discipline as Phases 5-6; both target pairs' FAILs were
 decisive enough that running more pairs against the identical spec is not expected to be
 informative.
-**Re-entry condition (DECIDED 2026-07-11): one bounded §2 consultation-window
-experiment, next session.** NOT the deferred false-break confirmation filter (foreclosed
-by the structural synthesis above) and NOT a TRADING-RULES §6 revival attempt at all —
-this is a regime-routing LAW question, not an edge-thesis retune, so it does not draw on
-squeeze_breakout's revival budget in either direction. Full spec: see the new
-"squeeze_breakout §2 consultation-window experiment" entry below and HANDOFF.md's
-pointer. Pre-registered rule, stated here before the experiment runs: FAIL closes
-squeeze_breakout AND this specific routing question PERMANENTLY (no further attempts,
-no revival budget spent either way); PASS proceeds to full TRADING-RULES §5 sign-off
-(all gates, not just 3/4/6) before any enablement is considered.
+**Re-entry condition (DECIDED 2026-07-11, EXECUTED 2026-07-11/12, VERDICT: FAIL,
+CLOSED PERMANENTLY): the §2 consultation-window experiment.** NOT the deferred
+false-break confirmation filter (foreclosed by the structural synthesis above) and NOT
+a TRADING-RULES §6 revival attempt at all — a regime-routing LAW question, not an
+edge-thesis retune, so it drew on no revival budget in either direction, and none was
+spent. Full spec, execution, reconciliation, and the corrected epitaph: see the
+"squeeze_breakout §2 consultation-window experiment" entry below (now marked CLOSED
+with its full POST-MORTEM). Both target pairs FAILED gates 3/4/6 bit-for-bit identically
+to this post-mortem's own numbers above — the amendment produced zero incremental
+trades in either pair. squeeze_breakout and this specific §2 question are both now
+closed permanently, per the pre-registered rule.
 **Where the detail lives:** full gate numbers, per-window trigger-region breakdown, and
 the hysteresis-excluded diagnostic are archived in the "Phase 7 complete" commit message
 and in bot/config/instruments.yaml's GBP_USD/USD_JPY squeeze_breakout_calibration notes.
@@ -386,7 +387,7 @@ actual outcome. See HANDOFF.md's close-out for what this implies for the system'
 move (Phase 8 risk/execution layer has no playbook cleared to trade; the practice
 forward-test in Phase 8's own exit criteria has nothing validated to forward-test yet).
 
-### squeeze_breakout §2 consultation-window experiment (SCHEDULED next session)
+### squeeze_breakout §2 consultation-window experiment (CLOSED 2026-07-11 — FAIL, permanently, both target pairs; do not revisit this specific mechanism)
 **Idea:** Extend squeeze_breakout's consultation window N LTF bars past a confirmed
 COMPRESSION→EXPANSION transition (only that specific transition — not general EXPANSION,
 not a change to any other playbook's routing), where
@@ -453,6 +454,133 @@ not a ship decision (BRAIN.md: "A green equity curve is one gate of three").
 real gates is its own bounded unit of work, deserving its own session's Verification Gate
 and generalization proof — same "one phase/bounded task per session" discipline
 PROMPTS.md §1 states as the default.
+
+---
+
+**POST-MORTEM (session executed 2026-07-11, verdict rendered 2026-07-12): FAIL, both
+target pairs, decisively — closes squeeze_breakout AND this §2 question PERMANENTLY,
+per the pre-registered rule above. No TRADING-RULES §6 revival budget consumed (never a
+revival attempt).**
+
+**Implementation, exactly as drafted above:** `prior_regime` added to `RegimeResult`
+(trailing default field, all 15 pre-existing direct construction sites unaffected),
+`RegimeClassifier` sets it at the confirmed-switch instant, mirrors `bars_in_regime`'s
+reset-to-1, holds through gray-zone/same-regime bars automatically (no special-casing
+needed — nothing but the confirmed-switch branch ever touches it). **Generalization
+proof: byte-identical**, confirmed by re-running and diffing against archived numbers —
+EUR_USD/trend_pullback (127 trades, net_pnl=-1437.53), USD_JPY/trend_pullback (115
+trades, net_pnl=-700.08 — corrects a "117" transcription slip from this session's own
+planning notes), EUR_USD/range_reversion (40 trades, net_pnl=-354.20), EUR_GBP/
+range_reversion (64 trades, net_pnl=-163.13) — all exact, all FAIL verdicts unchanged.
+squeeze_breakout's gate implemented as `regime.bars_in_regime <= regime_confirm_bars`
+(HTF-bar units), NOT `<= 8` (LTF-bar units) — a real units mismatch caught before
+implementation: `bars_in_regime` increments once per HTF close, while N=8 was derived
+as an LTF-bar quantity. Using `regime_confirm_bars` directly (2, for H4/H1) is the
+unit-correct equivalent and holds by construction (no second constant to drift out of
+sync). Compression-box SL frozen at the COMPRESSION-exit boundary for consultation-
+window entries via a new, explicitly-documented instance-state counter
+(`self._ltf_bars_since_compression`) — a real, flagged deviation from the class's prior
+"stateless otherwise" contract, safe only because a fresh instance is built per run/
+window. A consistency assertion (the strategy's own LTF counter vs. the HTF-derived
+bound, converted via `htf_ltf_ratio`) ran on every real consultation-window evaluation
+in both live gate runs and never tripped.
+
+**Gate 3/4/6 verdict: bit-for-bit identical to Phase 7's pre-amendment numbers, both
+pairs.** GBP_USD: 53 trades, net_pnl=-691.75, gate 4 sharp-peak (entry_threshold+10%
+deviates 93.1% from base_metric=56.68), gate 6 bootstrap P(net_pnl<=0)=96.8%. USD_JPY:
+50 trades, net_pnl=-113.13, gate 4 sharp-peak (atr_expansion_mean_mult-10% deviates
+88.6% from base_metric=301.09), gate 6 bootstrap P(net_pnl<=0)=61.9%. Gross-vs-net,
+R-multiple distribution, and the (a)/(b) false-break split (100% false-break, both
+pairs, case (b) empty in both) are ALSO bit-for-bit identical to Phase 7's archived
+exhibits. The new early/late (bars_in_regime==1 vs ==2) stratification added this
+session shows **0/0 in both buckets, both pairs** — the amendment produced literally
+zero incremental trades. Confirmed independently via per-regime attribution
+(diagnose_gates.py): all 53 GBP_USD and all 50 USD_JPY fired trades have
+`regime_at_entry=="COMPRESSION"` — zero `"EXPANSION"`-routed trades in either pair.
+
+**The pre-registered parity check (admitted population must be >=50% of Phase 7's
+excluded baseline, else halt interpretation) tripped at its most extreme value: 0%
+admitted against baselines of 52 (GBP_USD) and 35 (USD_JPY).** Per the rule, this
+halted interpretation pending explanation — investigated directly rather than accepted
+or dismissed (see BRAIN.md, "A tripped guardrail is a demand for evidence, not a
+verdict").
+
+**RECONCILIATION (the investigation, and the standalone finding it produced):** the
+original hysteresis-excluded diagnostic counts ANY non-COMPRESSION regime within N
+bars of a COMPRESSION exit — RANGING and TRENDING included, not just EXPANSION. Cross-
+tabulating the exact same candidate population (400 GBP_USD / 464 USD_JPY LTF bars,
+matching the Phase 7 counts precisely) against the real, continuously-classified regime
+state at each bar:
+
+| | GBP_USD | USD_JPY |
+|---|---|---|
+| Phase 7 candidate bars (any non-COMPRESSION regime within N) | 400 | 464 |
+| ...classified EXPANSION | 16 (4.0%) | 8 (1.7%) |
+| ...classified RANGING/TRENDING | 384 (96.0%) | 456 (98.3%) |
+| ...of the EXPANSION bars, correctly admitted (prior=COMPRESSION, bars_in_regime<=confirm_bars) | 16 (100%) | 8 (100%) |
+| ...of the admitted bars, actually fired a trade | 0 | 0 |
+
+Also verified: the per-window walk-forward classifier reset (a fresh `RegimeClassifier`
+per window, per `_make_run_fn`) does NOT explain the null result — replaying the full-
+history continuous transition timestamps against each window's own bounded re-
+bootstrap showed most windows (6 of 10 for GBP_USD) still observe the same rare
+transitions within their own slice. The gate is reachable, was reached, and admitted
+exactly the population it was designed to admit — with zero loss to windowing, timing,
+or bug (no assertion ever tripped across either live run).
+
+**The corrected epitaph — more precise than either of the two pre-registered options
+from the kickoff (neither applies: zero consultation-window trades occurred in either
+pair, so no false-break-share measurement was even possible on that population):** two
+independent conditions were required for this amendment to rescue squeeze_breakout, and
+both failed. (1) The targeted transition type — COMPRESSION resolving DIRECTLY into a
+confirmed EXPANSION — is rare: only 4.0% (GBP_USD) and 1.7% (USD_JPY) of Phase 7's
+originally-diagnosed excluded population was ever this specific transition type; the
+other 96-98% was COMPRESSION exiting into RANGING or TRENDING, a population this
+amendment's own correctly-scoped letter (COMPRESSION→EXPANSION *specifically*, per
+TRADING-RULES §2/§3.3's exact wording) cannot and should not reach. (2) Even within the
+small, genuinely-eligible population that DOES exist (16 and 8 bars respectively, 100%
+correctly captured), not one trigger evaluation ever cleared any walk-forward window's
+own selected entry_threshold on real price/indicator data. The amendment is not a bug;
+the population it targets is real but vanishingly rare, and even its rare real
+instances carry no signal.
+
+**STANDALONE FINDING, beyond the verdict itself — record for future regime-routing
+work, not just this playbook:** under this classifier's real behavior on both target
+pairs' 766-day H4 history, COMPRESSION resolves to a confirmed EXPANSION only ~2-4% of
+the time. §2's "COMPRESSION arms squeeze_breakout... implying a coiled market about to
+break out" narrative describes a near-nonexistent sequence in practice — most
+COMPRESSION regimes in this data resolve into a directional TRENDING move or fizzle
+back into RANGING, not a confirmed volatility EXPANSION. This is not itself a §2 law
+defect (COMPRESSION's own definition — narrow BB width — is unrelated to what regime
+follows it, and EXPANSION's ATR-ratio definition is a different, independent
+statistical claim) but it is a load-bearing empirical fact any future regime-routing
+work on either pair should carry forward rather than re-derive.
+
+**PIVOT-SESSION CANDIDATE surfaced by the above (untested, not a Phase 7 reopening —
+a new, distinct hypothesis for the next playbook-selection deliberation):**
+COMPRESSION→TRENDING is the dominant compression-exit path in this data (~60%+, per the
+regime breakdown table above: RANGING+TRENDING_UP+TRENDING_DOWN account for 384/400 and
+456/464 of all COMPRESSION-exit candidates). "Trend inception from compression" as an
+entry population — entering AT or shortly after the moment a compressed range resolves
+into a confirmed trend — is distinct from both of this system's dead theses: it is not
+squeeze_breakout's thesis (which specifically wanted the EXPANSION/volatility-breakout
+resolution, now shown to be the rare minority outcome), and it is not trend_pullback's
+tested structure either (trend_pullback's own FAIL was tested on trending-in-general,
+via EMA-pullback-zone entries deep into an already-established trend — not on the
+inception moment itself). This is recorded here as one candidate among others for the
+next pivot-session's ranked deliberation (alongside D1/H4 time-series momentum and
+carry-with-regime-conditioning) — to be evaluated on its own merits there, not built on
+the strength of this note alone.
+
+**Files touched this session (see the two-commit pair — "squeeze_breakout §2
+consultation-window experiment: FAIL" followed by its revert — for the exact diff):**
+`TRADING-RULES.md`, `bot/regime/classifier.py`, `bot/strategies/squeeze_breakout.py`,
+`bot/backtest/{engine,results}.py`, `scripts/{run_validation_gates,diagnose_gates,
+gross_vs_net}.py`, `tests/{test_regime,test_squeeze_breakout}.py`. The functional code
+and the TRADING-RULES.md EXPERIMENTAL clauses were reverted to Phase-7-closed state
+after the verdict (code must not contradict law, and law does not carry this mechanism
+now that it FAILED) — this ROADMAP entry, BRAIN.md's two new wisdom entries, and
+HANDOFF.md's close-out are the permanent record of what was tried and why it failed.
 
 ### Compression-within-trend signal flag
 **Idea:** When TRENDING regime fires and BB width is simultaneously below its rolling percentile, pass a `compression_flag=True` into the SignalLog indicator_snapshot. The trend_pullback strategy can optionally tighten its score threshold when the flag is set, favouring only the highest-confidence pullback entries.

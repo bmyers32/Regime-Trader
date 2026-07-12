@@ -474,6 +474,77 @@ class TestReset:
         assert clf._candidate_regime is None
         assert clf._candidate_bars == 0
         assert clf._current_regime is None
+        assert clf._prior_regime is None
+
+
+# ---------------------------------------------------------------------------
+# prior_regime (§2 consultation-window experiment, dated 2026-07-11) -- tracks the
+# regime confirmed immediately before the current one, same hold-through convention
+# bars_in_regime/current_regime already follow.
+# ---------------------------------------------------------------------------
+
+class TestPriorRegime:
+    def test_bootstrap_prior_regime_is_none(self) -> None:
+        clf = _make_classifier()
+        clf._raw_regime = _seq_mock([(RegimeState.RANGING, 0.8)])
+        r1 = clf.classify(_DUMMY)
+        assert r1.prior_regime is None
+
+    def test_prior_regime_set_on_confirmed_switch(self) -> None:
+        """Reuses TestHysteresis.test_two_consecutive_bars_switch's exact sequence:
+        RANGING -> TRENDING_UP confirmed switch on bar 4."""
+        clf = _make_classifier(regime_min_hold_bars=2)
+        clf._raw_regime = _seq_mock([
+            (RegimeState.RANGING, 0.8),       # bootstrap -> bars=1
+            (RegimeState.RANGING, 0.8),       # bars=2 (hold now met)
+            (RegimeState.TRENDING_UP, 0.9),   # candidate 1
+            (RegimeState.TRENDING_UP, 0.9),   # candidate 2 -> switch
+        ])
+        for _ in range(3):
+            clf.classify(_DUMMY)
+        r4 = clf.classify(_DUMMY)
+        assert r4.regime == RegimeState.TRENDING_UP
+        assert r4.prior_regime == RegimeState.RANGING
+
+    def test_prior_regime_holds_through_same_regime_reinforcement(self) -> None:
+        """After a confirmed switch, further bars of the SAME new regime must keep
+        reporting the OLD regime as prior_regime -- not flip to the current one."""
+        clf = _make_classifier(regime_min_hold_bars=2)
+        clf._raw_regime = _seq_mock([
+            (RegimeState.RANGING, 0.8),
+            (RegimeState.RANGING, 0.8),
+            (RegimeState.TRENDING_UP, 0.9),
+            (RegimeState.TRENDING_UP, 0.9),   # switch, prior_regime -> RANGING
+            (RegimeState.TRENDING_UP, 0.9),   # same regime, reinforcement
+            (RegimeState.TRENDING_UP, 0.9),   # same regime, reinforcement
+        ])
+        for _ in range(4):
+            clf.classify(_DUMMY)
+        r5 = clf.classify(_DUMMY)
+        r6 = clf.classify(_DUMMY)
+        assert r5.regime == RegimeState.TRENDING_UP
+        assert r5.prior_regime == RegimeState.RANGING
+        assert r6.prior_regime == RegimeState.RANGING
+
+    def test_prior_regime_holds_through_gray_zone(self) -> None:
+        """After a confirmed switch, gray-zone (_INDETERMINATE) bars must hold
+        prior_regime unchanged, same convention current_regime already follows."""
+        clf = _make_classifier(regime_min_hold_bars=2)
+        clf._raw_regime = _seq_mock([
+            (RegimeState.RANGING, 0.8),
+            (RegimeState.RANGING, 0.8),
+            (RegimeState.TRENDING_UP, 0.9),
+            (RegimeState.TRENDING_UP, 0.9),   # switch, prior_regime -> RANGING
+            (_INDETERMINATE, 0.0),            # gray zone
+            (_INDETERMINATE, 0.0),            # gray zone
+        ])
+        for _ in range(4):
+            clf.classify(_DUMMY)
+        r5 = clf.classify(_DUMMY)
+        r6 = clf.classify(_DUMMY)
+        assert r5.regime == RegimeState.TRENDING_UP   # held through gray zone
+        assert r5.prior_regime == RegimeState.RANGING
+        assert r6.prior_regime == RegimeState.RANGING
 
 
 # ---------------------------------------------------------------------------

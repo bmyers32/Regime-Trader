@@ -247,3 +247,49 @@ different fixes: incident postmortems with two plausible root causes, A/B tests 
 conflicting primary and secondary metrics, code review flagging both a design smell
 and a quick patch — decide the priority order while neutral, not after seeing which
 story is more flattering to already-planned work.
+
+### A diagnostic must count the population its remedy can reach.
+*Phase 7 follow-up — squeeze_breakout's §2 consultation-window experiment, 2026-07-11*
+The hysteresis-excluded diagnostic measured "bars within N of a COMPRESSION exit" —
+any post-COMPRESSION regime, not specifically EXPANSION. The amendment it motivated
+(admit COMPRESSION-originated EXPANSION for N bars) targeted only the EXPANSION
+subset, correctly, per the law's own letter. Reconciling the two on real data: of
+400/464 originally-excluded bars, only 16/8 (4.0%/1.7%) were ever classified
+EXPANSION at all — the rest were COMPRESSION resolving into RANGING or TRENDING, a
+population the amendment structurally could not and should not reach. The amendment
+worked exactly as designed on its own narrow population (100% correctly admitted,
+zero missed to bug or timing) and still failed, because that population was never
+more than a sliver of what the diagnostic had measured. The diagnostic's number was
+real; it was just answering a different, broader question than the remedy could ever
+address.
+Ignoring it → specific failure: a remedy is judged against the diagnostic's full
+count instead of the subset the remedy's own scope can actually touch, producing
+false confidence going in ("52 excluded bars, this should help") and a confusing
+null result coming out that looks like a bug instead of a scope mismatch.
+Applies anywhere a fix is sized against a problem's total measured count rather than
+the fraction its own mechanism can reach: a caching layer judged against total
+requests instead of cacheable ones, a retry policy judged against all failures
+instead of transient ones, an amended filter judged against everything the old
+filter excluded instead of the specific excluded subtype it was built for.
+
+### A tripped guardrail is a demand for evidence, not a verdict.
+*Phase 7 follow-up — squeeze_breakout's pre-registered parity check, 2026-07-11*
+The pre-registered rule (admitted population must be >=50% of the diagnostic's
+excluded count, or halt interpretation) tripped at its most extreme possible value:
+0% admitted against baselines of 52 and 35. The path of least resistance was either
+direction — accept "the amendment didn't work" as the whole story, or explain away
+the zero as an artifact and move on. The rule itself only says stop; it doesn't say
+what the answer is. Stopping to investigate (full-history vs. per-window classifier
+replay, then the population-reconciliation cross-tab) turned an unexplained null
+into a precise, falsifiable, more valuable finding — one that also surfaced an
+untested pivot hypothesis (COMPRESSION->TRENDING dominance) the null result alone
+would never have revealed. The guardrail's job was never to render the verdict; it
+was to force the investigation that made the verdict trustworthy.
+Ignoring it → specific failure: a guardrail fires, gets treated as self-explanatory,
+and the session either ships a conclusion nobody actually verified or discards a
+real result as "probably a bug" without checking — either way the guardrail's one
+job (forcing a human look) never happens.
+Applies anywhere an automated check can only detect an anomaly, not diagnose it:
+CI flakiness flags, statistical-significance gates, anomaly-detection alerts, a
+code-review bot flagging an unusual diff — the check earns its keep by making
+someone look, not by pre-deciding what they'll find.
