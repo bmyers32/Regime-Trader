@@ -17,17 +17,28 @@ runtime host differs. After running, instance/candle_cache/*.parquet needs to be
 copied to the same relative path on whichever machine runs the backtest/validation
 harness.
 
-Fetches both configured timeframes (defaults.timeframe_htf / timeframe_ltf) for every
-instrument under instruments.yaml's `instruments:` key, calibrated or not — validation
-work needs history for a pair regardless of its `calibrated` flag; `enabled` gates live
-trading only (TRADING-RULES §4.9), not backtest data availability.
+Fetches candles for every instrument under instruments.yaml's `instruments:` key,
+calibrated or not — validation work needs history for a pair regardless of its
+`calibrated` flag; `enabled` gates live trading only (TRADING-RULES §4.9), not
+backtest data availability.
+
+By default fetches both configured timeframes (defaults.timeframe_htf /
+timeframe_ltf). Pass --granularity to fetch a specific set instead (comma-
+separated, real OANDA granularity codes — e.g. "D", not the "D1" colloquial
+playbook name; see bot/data/fetcher.py's _granularity_to_minutes for the
+recognized set). This is still a CLI driver for DataProvider.fetch_history(),
+not a bespoke one-off parser — the flag only changes which granularities are
+requested, not how they're fetched or cached.
 
 Usage (from PA, project root, venv active):
     PYTHONPATH=. python scripts/fetch_history.py
+    PYTHONPATH=. python scripts/fetch_history.py --granularity D
+    PYTHONPATH=. python scripts/fetch_history.py --granularity D,H4
 """
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import yaml
@@ -43,13 +54,29 @@ _CACHE_DIR = Path(__file__).resolve().parent.parent / "instance" / "candle_cache
 _INSTRUMENTS_YAML = Path(__file__).resolve().parent.parent / "bot" / "config" / "instruments.yaml"
 
 
+def _parse_granularity_arg(argv: list[str]) -> list[str] | None:
+    """Return explicit granularities from --granularity, or None for caller's default."""
+    for i, arg in enumerate(argv):
+        if arg == "--granularity" and i + 1 < len(argv):
+            return [g.strip() for g in argv[i + 1].split(",") if g.strip()]
+        if arg.startswith("--granularity="):
+            value = arg.split("=", 1)[1]
+            return [g.strip() for g in value.split(",") if g.strip()]
+    return None
+
+
 def main() -> None:
     with open(_INSTRUMENTS_YAML) as f:
         raw_config = yaml.safe_load(f)
 
     instrument_names = list(raw_config["instruments"].keys())
     defaults = raw_config.get("defaults", {})
-    granularities = sorted({defaults["timeframe_htf"], defaults["timeframe_ltf"]})
+
+    explicit_granularities = _parse_granularity_arg(sys.argv[1:])
+    if explicit_granularities is not None:
+        granularities = sorted(set(explicit_granularities))
+    else:
+        granularities = sorted({defaults["timeframe_htf"], defaults["timeframe_ltf"]})
 
     api = API(access_token=config.OANDA_ACCESS_TOKEN, environment=config.OANDA_ENVIRONMENT)
     fetcher = CandleFetcher(api)
