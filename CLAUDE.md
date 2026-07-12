@@ -114,3 +114,4 @@ All routes require login (credentials from .env; Flask-Login or HTTP Basic — p
 ## Companion Files
 **Always active:** `AGENTS.md` (rules of engagement, Idea Protocol→ROADMAP), `TRADING-RULES.md` (domain law — contradicting code is a bug by definition).
 **On demand:** `PROMPTS.md` (session loop, clear rules, kickoff/close-out prompts — every session starts/ends through it), `HANDOFF.md` (between-session baton), `AGENT.md`, `BRAIN.md`, `CODE-RECON.md`, `EXECUTION-MOMENTUM.md`, `ROADMAP.md`, `DEPLOY-PYTHONANYWHERE.md`.
+`archive/` — closed records, loaded only when a pointer is followed; never loaded at kickoff.

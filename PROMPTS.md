@@ -90,6 +90,9 @@ Ending session. In order:
 4. Any feature idea surfaced → ROADMAP.md ## Feature Proposals now.
 5. Any wisdom-grade lesson → BRAIN.md ## Wisdom (per its schema).
 6. Propose commit message. Ask before committing. Never ship without consent.
+7. Archive sweep — any closed verdict, executed experiment, or resolved disposition
+   moves to archive/ with a two-line pointer left behind. Live docs carry open state
+   and law only.
 ```
 
 ### 5.5 RESUME INTERRUPTED PHASE (fresh context)
