@@ -110,4 +110,4 @@ hand a future revival attempt an obvious target. Scoped to short-horizon momentu
 (effective N∈{20,60}); the literature's ~12-month lookback was never tested
 (untestable on this data window) — TRADING-RULES §6's renewal clause (≥12mo new
 candles) is the lawful path later, not a re-try now.
-→ archive/POST-MORTEMS.md §6.
+→ archive/POST-MORTEMS.md §6, commit b599447.
