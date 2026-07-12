@@ -58,13 +58,36 @@ regime does THIS bar see."
   excludes current bar), computed only while HTF regime==COMPRESSION at the
   breakout bar. Breakout = close beyond box. Failure = close re-enters
   `[box_low, box_high]` within the next 4 LTF bars. Event = the re-entry bar.
-  Signed opposite the failed breakout's direction (fading the false break).
+  Signed opposite the failed breakout's direction (fading the false break) —
+  **this sign convention was proposed as a hypothesis, not a finding; the
+  census result on this convention refutes it, see "Corrected direction"
+  below.**
   **Footnote (pre-registered at approval):** the +4 horizon column is partially
   degenerate with the failure-confirmation window itself (an event can only
   exist because price was back inside the box by +1..+4 bars), so its
   distinguishability at +4 is structurally inflated relative to +8/+24 — the
   primary (+24) gating horizon is unaffected by this, but the +4 column should
   not be read as independent confirmation.
+
+  **Corrected direction (added post-computation, does not change any number —
+  see below):** under the fade-sign convention above, both the raw event mean
+  AND the event-vs-baseline diff CI are NEGATIVE at all three horizons
+  (event_mean: +4=−0.084, +8=−0.117, +24=−0.068; diff CI: +4=[−0.216,−0.007],
+  +8=[−0.360,−0.072], +24=[−0.585,−0.089]). A negative result under a
+  fade-signed convention is the mirror image of a positive result under the
+  opposite sign — the census does not support the fade hypothesis it was
+  built to test; it supports the opposite: after a failed breakout and box
+  re-entry, price on average continues in the ORIGINAL breakout direction (a
+  second-attempt-continuation pattern), not a reversion through/past the box.
+  Bootstrap CI magnitude and eligibility (distinguishable, cost≥4:1, margin)
+  are sign-invariant, so this correction changes the THESIS the slot-3 hearing
+  will test, not the mechanical award itself (see Slot-3 determination below).
+  Slot 3's hearing will be specified in the corrected (continuation) direction,
+  openly census-informed rather than externally pre-claimed like slots 1-2 —
+  TRADING-RULES §6's existing clause ("The Phase 11 forward test ... is the
+  final arbiter for every pass") applies identically to a census-derived
+  thesis as to a pre-claimed one; the census licenses the hearing, it does not
+  substitute for one.
 - **(vi) TRENDING death (ADX rollover <20):** event = first LTF bar within a
   TRENDING_UP/DOWN episode where raw ADX(14), aligned from H4 onto the merged
   LTF series, crosses below 20 — the raw signal, not waiting for hysteresis to
@@ -127,6 +150,65 @@ tuning):**
    the CI edge nearest zero, sign-agnostic — the correct "most distinguishable"
    measure.
 
+### Fix-3 evidentiary record
+
+No git commit trail distinguishes fix stages — all three fixes above were made
+and verified locally, in one editing pass, before the single commit (`0cd40d6`)
+that captured the final script; there is no separate pre/post-fix-3 commit to
+cite. The actual evidence is this session's two full console runs, both
+captured verbatim below.
+
+**Correction to the initial claim:** fix 3's effect on THIS census, verified
+against the actual run logs, changed the winner from **(iv) to (v)**, not from
+(iii) to (v). Run 1 (old tie-break, (iv) still NaN from bug #1/#2) selected
+(v) over (iii) — and did so *correctly*, because for two negative-CI
+candidates, sorting by raw lower-bound descending happens to agree with the
+sign-agnostic margin ranking (both metrics: v > iii). The bug only bites once
+(iv) enters the eligible set with a POSITIVE CI: raw-lower-bound-descending
+trivially ranks any positive lower bound above any negative one regardless of
+magnitude. Applying the OLD metric to the FINAL (bug-fixed) three-candidate
+set: `lo` values are iii=−1.038, iv=+0.050, v=−0.585 → descending order
+iv, v, iii → **old metric picks (iv)**. The NEW metric (`min(|lo|,|hi|)`):
+iii=0.003, iv=0.050, v=0.089 → **new metric picks (v)**. So the corrected
+metric's real effect was displacing (iv), not (iii) — (iii) was never going
+to win under either metric; its margin is the weakest of the three regardless
+of sign-handling.
+
+Run 1 console excerpt (candidate iv, pre-fix — degenerate NaN; mechanical
+determination selected v over iii, coincidentally correctly):
+```
+=== Candidate iv: London-open after Asian range ===
+  per-pair events (post-guard-band): {'GBP_JPY': 534, ... 'EUR_GBP': 534}
+  pooled n = 3204  (floor=30, floor_ok=True)
+  +24 bars: event_mean=nan baseline_mean=nan diff_CI=[nan, nan]
+  cost ratio (median |move|/spread @ +24): nan
+  distinguishable(+24)=False  cost_ok=False  clears_both=False
+...
+=== SLOT 3 MECHANICAL DETERMINATION ===
+Slot 3 AWARDED to candidate v: Failed-breakout re-entry into compression box
+  (other eligible candidates recorded, not awarded: ['iii'])
+```
+
+Run 2 console excerpt (all fixes applied — iv now populated with a genuine
+positive CI, exercising the tie-break fix for real):
+```
+=== Candidate iv: London-open after Asian range ===
+  per-pair events (post-guard-band): {'GBP_JPY': 534, ... 'EUR_GBP': 534}
+  guard band shrunk to 11 bars (frequency-adaptive, see effective_guard_band)
+  pooled n = 3204  (floor=30, floor_ok=True)
+  +24 bars: event_mean=2.7783 baseline_mean=2.6072 diff_CI=[0.0495, 0.2887]
+  cost ratio (median |move|/spread @ +24): 16.74
+  distinguishable(+24)=True  cost_ok=True  clears_both=True
+...
+=== SLOT 3 MECHANICAL DETERMINATION ===
+Slot 3 AWARDED to candidate v: Failed-breakout re-entry into compression box
+  (other eligible candidates recorded, not awarded: ['iv', 'iii'])
+```
+Both full logs (all 8 candidates, all 6 pairs) were captured to the session's
+scratchpad during execution; the excerpts above are the load-bearing lines for
+this determination, reproduced here so the evidence is committed, not
+ephemeral.
+
 ## Results
 
 All pairs: GBP_JPY, EUR_USD, USD_JPY, GBP_USD, AUD_USD, EUR_GBP. `n` = pooled
@@ -169,7 +251,9 @@ distinguishable from baseline AND clears the 4:1 cost ratio — margin metric
 | (iii) EXPANSION→RANGING | [-1.04, -0.003] | 0.003 (razor-thin — barely excludes zero) |
 
 **Slot 3 is AWARDED to candidate (v): Failed-breakout re-entry into the
-compression box.**
+compression box — hearing to be specified as a second-attempt CONTINUATION
+thesis (original breakout direction), per the corrected-direction finding
+above, not the originally-proposed fade.**
 
 Per the cap's own text ("Slot 3 awarded only by census evidence, to at most
 ONE candidate; all others recorded and closed"), (iii) and (iv) — despite
@@ -177,12 +261,34 @@ clearing both bars — are recorded and closed, not awarded a hearing. (iii)'s
 margin is especially thin (CI upper bound −0.003, a hair's-breadth exclusion
 of zero) and would not have survived a stricter multiple-comparison
 correction; flagged for the record, not used to override the mechanical rule.
+Both remain lawfully re-census-eligible — see "(iii)/(iv) closure and
+renewal eligibility" below.
 
 **Budget after this session:** three slots claimed — momentum (D1/H4,
 pre-claimed), carry-with-regime-conditioning (pre-claimed), failed-breakout
-re-entry into compression box (slot 3, this census). All three now proceed to
-§5 hearings independently; each stands or falls on its own forward test per
-the cap's "cap governs hearings, not winners" clause.
+re-entry into compression box as continuation (slot 3, this census). All
+three now proceed to §5 hearings independently; each stands or falls on its
+own forward test per the cap's "cap governs hearings, not winners" clause.
+
+## (iii)/(iv) closure and renewal eligibility
+
+Both cleared both census bars but were not awarded slot 3 (cap = one winner).
+They are CLOSED for this data window, not eliminated:
+
+- **(iii) EXPANSION→RANGING aftermath:** n=44 (just above the 30 floor), +24
+  CI=[−1.038, −0.003] (margin 0.003 — razor-thin), cost ratio 19.15. Closed on
+  thin-margin + not-awarded grounds, not on any data defect.
+- **(iv) London-open after Asian range:** n=3204 (largest population of any
+  candidate), +24 CI=[0.050, 0.289] (margin 0.050), cost ratio 16.74. Closed
+  solely because the cap capped slot 3 at one winner, not on evidentiary
+  weakness — its distinguishability is comfortably clear of zero.
+
+Per TRADING-RULES §6's 2026-07-12 entry ("Renews only when the data window
+materially renews (≥12 months of new candles)"), both are lawful re-census
+candidates starting 2027-07-12 at the earliest, and only via a fresh full
+census re-run (not a standalone re-measurement) — not before, and not via the
+separate playbook revival-budget mechanism (§6's 2026-07-10 entry), which
+governs closed PLAYBOOKS post-hearing, not pre-hearing census candidates.
 
 ## Script
 

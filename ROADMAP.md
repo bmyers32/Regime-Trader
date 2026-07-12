@@ -88,11 +88,12 @@ and signal-free; permanently closes squeeze_breakout and this §2 question.
 spent** — Phase 8 (risk/execution layer) has no playbook cleared to forward-test.
 
 **Pivot-cycle census + hearings-budget (EXECUTED 2026-07-12):** Law live in
-TRADING-RULES.md §6 (2026-07-12 entry) — three-hearing budget, slots 1–2 pre-claimed
-(momentum, carry-with-regime-conditioning), slot 3 by census evidence only. Census of
-all 8 pre-registered candidates × 6 pairs found 3 clearing both bars (distinguishable
-+ cost ≥4:1): (iii) EXPANSION→RANGING, (iv) London-open after Asian range, (v)
-failed-breakout re-entry into compression box. **Slot 3 AWARDED to (v)** per the
-pre-registered margin tie-break; (iii)/(iv) recorded and closed, not awarded (cap
-governs hearings, not winners — at most one). → archive/CENSUS-PIVOT-CYCLE.md,
-commit (this session).
+TRADING-RULES.md §6 — three-hearing budget, slots 1–2 pre-claimed (momentum,
+carry-with-regime-conditioning), slot 3 by census evidence only. **Slot 3 AWARDED
+to (v) failed-breakout re-entry into compression box, hearing to be specified as
+SECOND-ATTEMPT CONTINUATION in the original breakout direction** — the census
+signing tested a fade hypothesis and refuted it (CI negative under fade-sign at
+all 3 horizons); (iii) EXPANSION→RANGING and (iv) London-open after Asian range
+also cleared both bars but are recorded and closed, not awarded (cap = one
+winner), lawfully re-census-eligible once the data window renews (≥12mo).
+→ archive/CENSUS-PIVOT-CYCLE.md.
