@@ -68,15 +68,16 @@ time. §2's "COMPRESSION arms squeeze_breakout" narrative (implying a coiled mar
 about to break out) describes a near-nonexistent sequence in this data — most
 COMPRESSION regimes resolve into a directional TRENDING move or fizzle back to RANGING.
 
-PIVOT-SESSION CANDIDATE surfaced by the above (untested, NOT a Phase 7 reopening — a
-new, distinct hypothesis, recorded in ROADMAP.md for the next playbook-selection
-deliberation, to be ranked on its own merits there, not built on the strength of this
-note alone): COMPRESSION->TRENDING is the dominant compression-exit path in this data
-(~60%+). "Trend inception from compression" as an entry population is distinct from
-both of this system's dead theses — not squeeze_breakout's (which wanted the rare
-EXPANSION resolution specifically) and not trend_pullback's tested structure either
-(which entered deep into an already-established trend via EMA-pullback zones, not at
-the inception moment).
+PIVOT-CYCLE HYPOTHESIS surfaced by the above (untested, NOT a Phase 7 reopening):
+COMPRESSION->TRENDING is the dominant compression-exit path in this data (~60%+).
+"Trend inception from compression" as an entry population is distinct from both of
+this system's dead theses — not squeeze_breakout's (which wanted the rare EXPANSION
+resolution specifically) and not trend_pullback's tested structure either (which
+entered deep into an already-established trend via EMA-pullback zones, not at the
+inception moment). This enters ROADMAP.md's new "Pivot cycle: census + hearings-budget
+session" entry as closed-list candidate (i) — NOT as a deliberation peer of D1/H4
+momentum or carry-with-regime-conditioning (whose slots are pre-claimed on external-
+evidence grounds).
 
 BRAIN.md: two new wisdom entries this session — "A diagnostic must count the
 population its remedy can reach" (the scope-mismatch mechanism above) and "A tripped
@@ -102,24 +103,35 @@ epitaphs; TRADING-RULES §6's revival budget remains fully unspent across all th
 §2 regime-routing question is now also closed permanently. No playbook is validated to
 trade. Phase 8 (risk/execution layer) has no strategy cleared to forward-test.
 
-Not done / next action: the system needs a NEW playbook candidate — this is a pivot
-decision, not a Phase 8 kickoff, and not a revival of any closed playbook. Point next
-session at the pivot deliberation, ranking candidates on their own merits (not
-pre-decided here):
-  1. D1/H4 time-series momentum — first per the ranked map referenced this session.
-  2. Carry-with-regime-conditioning — second.
-  3. "Trend inception from compression" (COMPRESSION->TRENDING entry population,
-     surfaced above) — a new candidate this session added to the deliberation, distinct
-     from both dead theses, evaluated alongside the other two on its own merits.
+Not done / next action: NEXT SESSION EXECUTES ROADMAP.md's "Pivot cycle: census +
+hearings-budget session" entry (drafted 2026-07-12, external review conversation, not
+yet in TRADING-RULES.md, not yet executed) — measurement and lawmaking only; no
+strategy code exists at its end. This is NOT a Phase 8 kickoff and NOT a revival of any
+closed playbook. In brief (full text, verbatim, in ROADMAP.md — read it there, not
+re-derived here): (1) write TRADING-RULES §6's pivot-cycle hearings-budget amendment
+(three §5 hearings for this data window; slots 1-2 pre-claimed for D1/H4 momentum and
+carry-with-regime-conditioning; slot 3 awarded only by census evidence to at most one
+candidate, per a pre-registered event-study + cost-ratio rule); (2) run the moments
+census (population count, event-study forward-return distributions, cost-ratio context
+— measurement only, no strategies/parameters/gates) across all six pairs for the closed
+list of eight candidates, of which COMPRESSION->TRENDING confirmed transitions
+(candidate (i), the "trend inception from compression" hypothesis surfaced this
+session) is one. The census counts and measures; it does not rank on narrative appeal
+— momentum and carry are already in, not competing for a slot.
 
 Open tensions / do NOT redo:
   - Do not reopen squeeze_breakout, trend_pullback, or range_reversion with a parameter
     retune, a different pair, or a different M-timeframe comparison — all three are
     closed per their own post-mortems, and the §2 routing question specifically is now
     also closed permanently (not on a hunch, not without a genuinely new mechanism).
-  - Do not treat the "trend inception from compression" pivot candidate as pre-approved
-    — it is one candidate among several for the next session's own ranked deliberation,
-    not a green light to start building.
+  - Do not treat "trend inception from compression" as a deliberation peer of D1/H4
+    momentum or carry — it is closed-list census candidate (i), scored by the
+    pre-registered event-study rule alongside the other seven, not ranked on its own
+    narrative merit against two slots that are already pre-claimed.
+  - Do not build any strategy code, run any gates, or search any parameters during the
+    census session — Deliverable 2 is measurement only (population counts, event-study
+    distributions, cost ratios) on cached data; strategy work, if any, begins only
+    after slot 3's award (or forfeiture) is decided.
   - Do not re-add `prior_regime`, squeeze_breakout's consultation gate, or the frozen-SL
     mechanism by re-deriving them from scratch — the exact implementation, byte-
     identical generalization proof, and full reconciliation are preserved in git history

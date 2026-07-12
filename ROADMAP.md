@@ -556,8 +556,7 @@ follows it, and EXPANSION's ATR-ratio definition is a different, independent
 statistical claim) but it is a load-bearing empirical fact any future regime-routing
 work on either pair should carry forward rather than re-derive.
 
-**PIVOT-SESSION CANDIDATE surfaced by the above (untested, not a Phase 7 reopening —
-a new, distinct hypothesis for the next playbook-selection deliberation):**
+**PIVOT-CYCLE HYPOTHESIS surfaced by the above (untested, not a Phase 7 reopening):**
 COMPRESSION→TRENDING is the dominant compression-exit path in this data (~60%+, per the
 regime breakdown table above: RANGING+TRENDING_UP+TRENDING_DOWN account for 384/400 and
 456/464 of all COMPRESSION-exit candidates). "Trend inception from compression" as an
@@ -567,10 +566,11 @@ squeeze_breakout's thesis (which specifically wanted the EXPANSION/volatility-br
 resolution, now shown to be the rare minority outcome), and it is not trend_pullback's
 tested structure either (trend_pullback's own FAIL was tested on trending-in-general,
 via EMA-pullback-zone entries deep into an already-established trend — not on the
-inception moment itself). This is recorded here as one candidate among others for the
-next pivot-session's ranked deliberation (alongside D1/H4 time-series momentum and
-carry-with-regime-conditioning) — to be evaluated on its own merits there, not built on
-the strength of this note alone.
+inception moment itself). This enters the "Pivot cycle: census + hearings-budget
+session" entry below as closed-list candidate (i) — NOT as a deliberation peer of D1/H4
+momentum or carry-with-regime-conditioning (whose slots are pre-claimed on external-
+evidence grounds, not up for ranking) — measured by the census's pre-registered
+event-study rule, not evaluated on narrative merit here.
 
 **Files touched this session (see the two-commit pair — "squeeze_breakout §2
 consultation-window experiment: FAIL" followed by its revert — for the exact diff):**
@@ -581,6 +581,58 @@ and the TRADING-RULES.md EXPERIMENTAL clauses were reverted to Phase-7-closed st
 after the verdict (code must not contradict law, and law does not carry this mechanism
 now that it FAILED) — this ROADMAP entry, BRAIN.md's two new wisdom entries, and
 HANDOFF.md's close-out are the permanent record of what was tried and why it failed.
+
+### Pivot cycle: census + hearings-budget session (drafted, not executed)
+**Status:** drafted (external review conversation, 2026-07-12) — NOT yet entered into
+TRADING-RULES.md, NOT yet executed. This is the plan the next session executes; see
+HANDOFF.md's pointer. Recorded here verbatim so it is not re-derived cold.
+
+**Deliverable 1 — Law (add to TRADING-RULES §6, dated, when this session runs):**
+> Pivot-cycle hearings budget: THREE full §5 hearings for the current data window.
+> Slots 1–2 pre-claimed on external-evidence grounds: D1/H4 time-series momentum;
+> carry-with-regime-conditioning. Slot 3 awarded only by census evidence, to at most
+> ONE candidate; all others recorded and closed. The cap governs hearings, not
+> winners: every hearing that passes gates proceeds to §5 sign-off and ships —
+> multiple passes all ship, routing per §2. The Phase 11 forward test (≥60 days,
+> unseen data) is the final arbiter for every pass — a gates-pass failing forward
+> tolerance does not go live regardless of budget state. Exhausting the budget
+> without any pass ends strategy search on this window — the next conversation is
+> terrain, not tactics. The budget renews only when the data window materially
+> renews (≥12 months of new candles), at which point retired candidates may
+> lawfully re-enter a fresh census.
+
+**Deliverable 2 — Moments census, measurement only** (no strategies, no parameters,
+no gates, cached data only): for each pre-declared candidate, on all six pairs:
+(a) population count over the full window;
+(b) naive event study — forward return distributions at +4/+8/+24 LTF bars vs. a
+    matched random same-regime baseline;
+(c) cost context — median session spread at event hour vs. forward-move magnitude,
+    ATR:spread-style ratio.
+
+**Candidates (closed list):**
+(i) COMPRESSION→TRENDING confirmed transitions — the "trend inception from
+    compression" hypothesis surfaced above by squeeze_breakout's §2 post-mortem;
+(ii) TRENDING→RANGING→TRENDING resumptions;
+(iii) EXPANSION→RANGING aftermath;
+(iv) London-open after a defined Asian range (one definition, fixed up front);
+(v) failed-breakout re-entry into the compression box;
+(vi) TRENDING death (ADX rollover <20);
+(vii) Monday open gaps;
+(viii) month-end final two sessions.
+
+**Pre-registered award rule:** slot 3 goes to the single candidate whose event-study
+distribution is most clearly distinguishable from baseline AND whose cost ratio
+clears 4:1 at realistic horizons — only if at least one clears both bars; none do →
+slot 3 forfeited, budget is two. Borderline forfeits; ties go to fewer hearings.
+
+**Why this is measurement, not deliberation:** momentum and carry are already
+in — pre-claimed on external evidence, not competing for a slot. The eight census
+candidates (including trend-inception, (i)) are a closed list scored by one
+pre-registered rule decided before any of the census data is seen — the next session
+counts and measures; it does not rank on narrative appeal. See BRAIN.md's "Decide
+which diagnostic wins before either diagnostic exists" and "A tripped guardrail is a
+demand for evidence, not a verdict" — same discipline, one level earlier: deciding the
+award rule before the census runs, not after seeing which candidate looks best.
 
 ### Compression-within-trend signal flag
 **Idea:** When TRENDING regime fires and BB width is simultaneously below its rolling percentile, pass a `compression_flag=True` into the SignalLog indicator_snapshot. The trend_pullback strategy can optionally tighten its score threshold when the flag is set, favouring only the highest-confidence pullback entries.
