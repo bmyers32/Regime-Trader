@@ -111,3 +111,23 @@ hand a future revival attempt an obvious target. Scoped to short-horizon momentu
 (untestable on this data window) — TRADING-RULES §6's renewal clause (≥12mo new
 candles) is the lawful path later, not a re-try now.
 → archive/POST-MORTEMS.md §6, commit b599447.
+
+**Carry-with-regime-conditioning (CLOSED 2026-07-13, §6 slot 2 of 3 SPENT):** FAIL §5
+gates, USD_JPY/GBP_JPY — a novel failure signature for this codebase: gate 3 PASSES
+on BOTH pairs (net_pnl=+414.84/104 trades, +386.45/101 trades, a real edge existed),
+but gate 6's bootstrap decisively rejects both at nearly identical probabilities
+(P(net_pnl≤0)=22.5%/22.3%, both far above the ≤5% bar) — not statistically robust.
+Gate 4 splits (USD_JPY FAIL, GBP_JPY PASS) but per this hearing's own scope caveat
+measures exit-parameter stability only (zero signal parameters existed to search),
+so neither result implicates the signal itself. Pre-registered EXPANSION-during-hold
+diagnostic returns a clean null on both pairs (~0% of losing PnL coincided with
+EXPANSION during the hold, despite the veto genuinely binding 21.4%/37.9% of
+consulted entries) — the hearing's own centerpiece regime-gate doesn't explain the
+losses, no revival target handed forward. Both pairs FAILing (pre-registered reading)
+means carry is closed at its own JPY-funded home terrain, not one strong result.
+Real-data sign-stability exhibit confirms both target pairs were STATIC-differential
+positions this window (never switched sign) — GBP_USD/AUD_USD (confirmed dynamic,
+5/3 sign flips respectively) are the lawful renewal candidates for actually testing a
+switching carry signal. 3 of 3 §6 hearings now spent (0 passes); only slot 3
+(failed-breakout re-entry) remains unrun.
+→ archive/POST-MORTEMS.md §7, commit TBD (this session).

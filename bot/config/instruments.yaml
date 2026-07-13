@@ -341,15 +341,29 @@ instruments:
         do not enable.
     carry_calibration:
       calibration_note: >
-        Uses defaults.carry_params — no per-pair override. NOT YET TESTED
-        (2026-07-13): TRADING-RULES §6 slot 2 spec-mapping resolved and
-        recorded in HANDOFF.md, real FRED policy-rate snapshot fetched and
-        pinned (calibration/rates/), sign-stability exhibit confirms this
-        pair's differential is STATIC POSITIVE the whole 2024-2026 window
-        (GBP>JPY throughout, min=2.997 max=5.203 percentage points, 0 sign
+        Uses defaults.carry_params — no per-pair override. TESTED 2026-07-13:
+        TRADING-RULES §5 gates run on real >=2yr D/H4 OANDA history + real
+        cost_model + real FRED policy-rate snapshot — FAILED, novel
+        signature (gate 3 genuinely PASSES). Gate 3: 101 stitched OOS
+        trades, net_pnl=+386.45 (PASS, not a floor-miss). Gate 4: PASS,
+        base_metric=662.82, worst neighbor deviation 31.0% (sl_atr_mult
+        +10% -> 457.67) — but this only covers exit-parameter stability
+        (zero signal parameters exist to sweep this hearing), says nothing
+        about the signal's own robustness. Gate 6: FAILED, bootstrap
+        P(net_pnl<=0)=22.3% (bar is <=5%) — the positive result is not
+        statistically distinguishable from noise. Gross=+437.90 (100
+        trades) vs net=+386.45 (total_cost=51.45, small relative to either
+        figure — rollover_cost=+145.96 nearly offsets it). Duty cycle
+        80.1% (466.3d/582.0d). EXPANSION-veto fire-rate 37.9% (72/190,
+        genuinely binding, not decorative). EXPANSION-during-hold
+        diagnostic (losing trades): only 1/46 losses (-53.08 of -2309.52
+        total) coincided with EXPANSION during the hold — a clean null
+        result, the centerpiece regime-gate does not explain the losses.
+        Sign-stability exhibit (real data): STATIC POSITIVE the whole
+        window (GBP>JPY throughout, min=2.997 max=5.203 pts, 0 sign
         flips) — a regime-conditioned static short-JPY position, not a
-        dynamically-switching signal. §5 gates 3/4/6 not yet run. Update
-        this note once they are.
+        dynamically-switching signal. See archive/POST-MORTEMS.md §7 for
+        the full writeup. Not ship-ready; do not enable.
     cost_model:
       spread_pips:
         asian: 3.9
@@ -658,15 +672,30 @@ instruments:
         Not ship-ready; do not enable.
     carry_calibration:
       calibration_note: >
-        Uses defaults.carry_params — no per-pair override. NOT YET TESTED
-        (2026-07-13): TRADING-RULES §6 slot 2 spec-mapping resolved and
-        recorded in HANDOFF.md, real FRED policy-rate snapshot fetched and
-        pinned (calibration/rates/), sign-stability exhibit confirms this
-        pair's differential is STATIC POSITIVE the whole 2024-2026 window
-        (USD>JPY throughout, min=2.893 max=5.344 percentage points, 0 sign
-        flips) — a regime-conditioned static short-JPY position, not a
-        dynamically-switching signal. §5 gates 3/4/6 not yet run. Update
-        this note once they are.
+        Uses defaults.carry_params — no per-pair override. TESTED 2026-07-13:
+        TRADING-RULES §5 gates run on real >=2yr D/H4 OANDA history + real
+        cost_model + real FRED policy-rate snapshot — FAILED, novel
+        signature (gate 3 genuinely PASSES). Gate 3: 104 stitched OOS
+        trades, net_pnl=+414.84 (PASS, not a floor-miss). Gate 4: FAILED,
+        base_metric=288.30, sl_atr_mult (+10%) deviates 58.4%
+        (metric=456.65) — a sharp, non-robust peak, but this only covers
+        exit-parameter stability (zero signal parameters exist to sweep
+        this hearing), says nothing about the signal's own robustness.
+        Gate 6: FAILED, bootstrap P(net_pnl<=0)=22.5% (bar is <=5%) — the
+        positive result is not statistically distinguishable from noise.
+        Gross=+364.20 (106 trades) vs net=+414.84 — net EXCEEDS gross
+        (total_cost=-50.64, a net credit overall: rollover_cost=+146.21
+        more than fully offsets spread/slippage drag). Duty cycle 81.0%
+        (472.1d/582.6d). EXPANSION-veto fire-rate 21.4% (33/154, genuinely
+        binding, not decorative). EXPANSION-during-hold diagnostic (losing
+        trades): 0/49 losses (all -2425.69) coincided with EXPANSION
+        during the hold — a clean null result, the centerpiece regime-gate
+        does not explain the losses. Sign-stability exhibit (real data):
+        STATIC POSITIVE the whole window (USD>JPY throughout, min=2.893
+        max=5.344 pts, 0 sign flips) — a regime-conditioned static
+        short-JPY position, not a dynamically-switching signal. See
+        archive/POST-MORTEMS.md §7 for the full writeup. Not ship-ready;
+        do not enable.
     cost_model:
       spread_pips:
         asian: 1.6

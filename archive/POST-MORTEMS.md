@@ -667,3 +667,189 @@ diagnose_gates,gross_vs_net}.py` (momentum registry entry + per-strategy TF/
 window-sizing generalization + A3/A5/A6 diagnostics), `tests/{test_indicators,
 test_regime,test_backtest,test_stability,test_momentum}.py` (new/extended
 coverage, structure tests both directions).
+
+## §7 carry-with-regime-conditioning post-mortem (CLOSED 2026-07-13 — FAIL, §6 slot 2 of 3 SPENT; both target pairs, novel failure signature)
+
+**Idea:** TRADING-RULES §6 slot 2 (pre-claimed, external-evidence thesis, forward-
+premium-puzzle lineage) — direction = sign of the real historical policy-rate
+differential (rate[base]−rate[quote], fetched from FRED and pinned to
+calibration/rates/, the project's first non-OANDA data dependency), signal-only
+(§1.1 exemption), D1 anchor / H4 execution (reused directly from momentum's own TF
+setup), EXPANSION on the D-anchor vetoes new entries only (this hearing's own
+centerpiece — the first strategy to gate directly on the classifier's confirmed
+`regime.regime`, unlike momentum's deliberate non-gating). Full spec-mapping
+(signal-source resolution, sign-stability exhibit on real data, all six spec items,
+four amendments plus four build-time riders) resolved and recorded in HANDOFF.md
+before any strategy code existed — see that record for the complete resolved spec;
+not reproduced here.
+
+**Sign-stability exhibit (real FRED data, load-bearing for pair selection):**
+USD_JPY and GBP_JPY are both STATIC-POSITIVE the entire 2024–2026 window (USD/GBP
+rate always above JPY, 0 sign flips, differentials narrowing from ~5.3%/~5.15% to
+~2.6%/~2.75% as the Fed cut and the BOJ hiked) — this hearing therefore tested a
+**regime-conditioned static short-JPY position**, not a dynamically-switching signal.
+GBP_USD (5 flips) and AUD_USD (3 flips) are the config's genuinely dynamic-
+differential pairs — confirmed but not run this hearing, recorded as lawful §6-renewal
+candidates.
+
+**Verdict:** FAILED TRADING-RULES §5 gates on both target pairs (USD_JPY, GBP_JPY) —
+but via a **failure signature never seen in this codebase before**: every prior FAIL
+(trend_pullback, range_reversion, squeeze_breakout, momentum) had negative gross
+and/or net stitched-OOS PnL. Carry is the first strategy whose gate 3 (walk-forward
+net PnL) genuinely PASSES on BOTH pairs — a real, positive, non-trivial edge existed
+over this stitched OOS record — and still fails overall because gate 6 (bootstrap
+robustness) decisively rejects both pairs at nearly IDENTICAL probabilities.
+
+USD_JPY: gate 3 PASS (net_pnl=+414.84, 104 trades, comfortably clear of the 20-trade
+floor). Gate 4 **FAIL**: base_metric=288.30, the `sl_atr_mult` (+10%) neighbor
+deviates 58.4% (metric=456.65) — sharp/non-robust peak. Gate 6 **FAIL**:
+observed_net_pnl=414.84, bootstrap P(net_pnl≤0)=22.5% (bar is ≤5%).
+
+GBP_JPY: gate 3 PASS (net_pnl=+386.45, 101 trades). Gate 4 **PASS**: base_metric=
+662.82, worst neighbor deviation 31.0% (`sl_atr_mult` +10%, metric=457.67) — inside
+the 50% bar. Gate 6 **FAIL**: observed_net_pnl=386.45, bootstrap P(net_pnl≤0)=22.3%.
+
+**Gate 4 split is not a rescue, per the pre-registered scope caveat (HANDOFF.md C.1):**
+carry has ZERO free *signal* parameters this hearing (the differential's sign is
+fixed, no minimum-differential threshold was searched — Part B's real-data exhibit
+showed both pairs' differentials sit at 2.6–5.3 points the whole window, far from any
+small pre-declared floor, so that search dimension would have been structurally
+inert). Gate 4 above therefore measures **exit-parameter stability only**
+(`sl_atr_mult`/trail settings) — USD_JPY's FAIL says its stop distance is a fragile
+choice, GBP_JPY's PASS says its own isn't; NEITHER result says anything about the
+carry SIGNAL's own robustness, unlike momentum's gate 4, which independently caught
+`n` (the signal itself) as the fragile dimension. The decisive, SHARED signature
+across both pairs is gate 6, not gate 4.
+
+**Gross-vs-net, a genuinely new shape for this codebase:** neither pair is "no-edge"
+(gross≤0) or the traditional "cost-dominated" (gross>0, net<0) — BOTH pairs have
+gross>0 AND net>0, because rollover is a substantial net CREDIT on the long-carry
+direction this signal holds throughout the window (see C.6 reconciliation below).
+USD_JPY: gross=364.20 (106 trades) vs net=414.84 — net EXCEEDS gross, total_cost=
+−50.64 (a net CREDIT overall: spread/slippage drag is more than fully offset by
+rollover). GBP_JPY: gross=437.90 (100 trades) vs net=386.45 — the traditional
+gross>net direction, but only barely (total_cost=51.45, small relative to either
+pair's PnL scale) — rollover_cost=+145.96 still dwarfs the net drag. Trade-count
+differences between the gross re-run and the accepted net run (106 vs 104, 100 vs
+101) are the same known zero-cost-refill artifact prior hearings' gross-vs-net exhibit
+already documented (fills differ under zero costs) — not a new discrepancy.
+
+**A5(d)-equivalent duty cycle + rollover-share (PRIMARY exhibit for this thesis, not
+context, per HANDOFF.md pre-registration 5):** USD_JPY duty_cycle=81.0% (held 472.1d
+of 582.6d), rollover_cost=+146.21. GBP_JPY duty_cycle=80.1% (held 466.3d of 582.0d),
+rollover_cost=+145.96. Both pairs land within half a percentage point of each other on
+duty cycle and within $0.25 of each other on total rollover credit — a striking,
+unplanned convergence, consistent with both pairs holding the same static-long-JPY-
+funded direction for a similar fraction of a nearly identical stitched-OOS span.
+`rollover_share_of_total_cost` reads oddly (288.7% for USD_JPY, −283.7% for GBP_JPY)
+only because `total_cost` itself is small and near zero for both pairs (rollover
+credit nearly cancels the spread/slippage drag) — the percentage's instability is a
+denominator artifact, not new information; the dollar figures above are the honest
+read.
+
+**C.6 rollover reconciliation, checked and confirmed:** both pairs' carry signal says
+LONG throughout the window (static-positive differential); `instruments.yaml`'s
+current OANDA snapshot credits the LONG side for both pairs (GBP_JPY long=+1.063,
+USD_JPY long=+0.803 pips/day) — the engine's real rollover charges above
+(+146.21/+145.96) confirm this reconciles cleanly in practice, not just in the
+pre-registered sign check. **Divergence direction, as pre-registered:** both pairs'
+real differentials NARROWED over the window (Fed cut, BOJ hiked) while the engine's
+constant snapshot reflects roughly TODAY's narrower gap — meaning the engine's
+rollover credit UNDERSTATES what early-window trades would truly have earned. The
+cost model is conservative for this thesis, not generous, on both pairs. This PASS-
+level gate-3 result therefore does NOT owe its positivity to an unfairly generous
+rollover assumption — if anything it is understated; the eventual FAIL is not
+attributable to this divergence in the other direction either.
+
+**EXPANSION-veto pass-rate (§1.7 exhibit, C.2 rider 3, BINDING):** USD_JPY fired=
+33/154=21.4%. GBP_JPY fired=72/190=37.9%. Both comfortably inside the 1%–95% band —
+**the centerpiece regime-conditioning gate is genuinely binding on both pairs, not
+decorative.** GBP_JPY's D-anchor spent nearly twice the EXPANSION-bar share USD_JPY's
+did (6.2% vs 2.8% of all D bars, DIAGNOSTIC 3), consistent with its higher veto rate.
+
+**EXPANSION-during-hold diagnostic (C.2 rider 1, pre-registered specifically to hand
+a future revival attempt a concrete target) — a clean NULL result on both pairs:**
+USD_JPY: of 49 losing stitched-OOS trades (−2425.69 total), **exactly 0** ever saw
+EXPANSION confirmed on the D-anchor during the hold. GBP_JPY: of 46 losing trades
+(−2309.52 total), only **1** (−53.08) did. In both pairs, essentially the entire loss
+total sits in the `no_expansion_during_hold` bucket. **This means the hearing's own
+centerpiece regime-conditioning mechanic — while genuinely binding on entries (the
+pass-rate exhibit above) — does not explain why this thesis loses money.** The
+pre-registered revival mechanism this diagnostic was built to potentially hand
+forward (mid-hold forced flatten on EXPANSION) would not have prevented these losses,
+since they did not coincide with EXPANSION at all. Same standing as slot 1's A3/A7
+null result: a genuine null, not an artifact of an under-powered diagnostic — any
+future revival attempt inherits this null result and does not get an obvious target
+from it.
+
+**Per-regime attribution (gate 5, informational, both pairs share a notable
+pattern):** USD_JPY's best regime was RANGING (+533.98, 50 trades, 60.0% win); worst
+was TRENDING_UP (−96.00, 2 trades, 0% win — thin sample, not load-bearing alone).
+GBP_JPY's best regime was also RANGING (+323.06, 43 trades, 62.8% win); worst was
+also TRENDING_UP (−205.17, 11 trades, 36.4% win — this one IS a real sample). **Both
+pairs lose money specifically in the classified TRENDING_UP state** — an echo of
+momentum's own irony (that hearing lost money specifically IN its own TRENDING
+states) worth flagging, not acted on (regime is not a directional filter for carry
+by design — only an EXPANSION suspend gate).
+
+**Regime-transition proximity (informational):** USD_JPY early-in-regime trades
+(bars_in_regime≤5) actually outperformed established ones (+361.43/21/61.9% vs
++53.42/83/50.6%). GBP_JPY shows the opposite lean (+90.07/30/53.3% early vs
++296.38/71/54.9% established). No consistent cross-pair signal here — recorded, not
+acted on.
+
+**Reasoning it's closed, not iterated:** gate 6's bootstrap rejects both pairs at
+nearly identical probabilities (22.3–22.5%) — not a borderline, pair-specific
+coin-flip call but a consistent, decisive signature across the entire target-pair set.
+Gate 4's split result (USD_JPY FAIL / GBP_JPY PASS) does not rescue or complicate this
+verdict once its scope is correctly read (exit-parameter stability only, per the
+pre-registered caveat — the signal itself was never in that sweep). The pre-registered
+EXPANSION-during-hold diagnostic — built specifically to hand a future revival attempt
+a concrete target — returns a clean null on both pairs: the centerpiece regime-gate is
+real and binding, but it isn't where the losses are, so strengthening it (e.g. a
+mid-hold flatten) would not plausibly fix this. Per TRADING-RULES §6: this is a real
+evaluated FAIL, not a floor-miss (both pairs cleared the 20-trade floor by a wide
+margin, 104/101 stitched OOS trades) — it spends slot 2 outright.
+
+**Verdict-combination reading (pre-registered before either pair's gates ran, per
+HANDOFF.md C.5):** both pairs FAILED — per the pre-registered reading, this means
+**carry is closed at its own home terrain** (JPY-funded, static-differential pairs),
+not "one strong result, one uninformative miss." The correlation caveat that
+motivated this reading held: both pairs are substantially one macro bet (short-JPY),
+and both moved together on the decisive gate (gate 6), exactly the correlated-failure
+pattern the pre-registration anticipated.
+
+**Scope of this FAIL:** confined to a regime-conditioned STATIC short-JPY position on
+these two pairs' cost/regime profile, this data window. The literature's forward-
+premium-puzzle thesis is fundamentally about a *dynamically switching* differential
+signal — this hearing never tested that shape, because neither target pair's
+differential ever switched sign in this window (Part B's own exhibit, confirmed on
+real data). GBP_USD (5 sign flips, the most dynamic pair in the whole config) and
+AUD_USD (3 flips) remain untested and are the lawful pairs a future §6-renewal
+hearing would need to target to actually test signal dynamics, not just regime-gating
+a static bet — TRADING-RULES §6's renewal clause (≥12mo new candles) is the lawful
+path there, not a re-try now. Re-entry per any future revival would need to name a
+genuinely new edge-thesis mechanism per the existing revival-budget law (TRADING-
+RULES §6, 2026-07-10 entry) — the EXPANSION-during-hold null result above is part of
+the record a future revival attempt must reckon with, not route around.
+
+**Untested pairs:** EUR_USD, EUR_GBP (both static-sign, non-JPY, per the exhibit) and
+AUD_USD/GBP_USD (dynamic-sign, recorded renewal candidates) never run under this
+spec — same "others follow only on evidence" discipline as every prior playbook;
+both target pairs' FAILs were decisive enough (nearly identical gate-6 signature)
+that running the two remaining static-sign pairs is not expected to add information
+this hearing's own centerpiece-diagnostic null result didn't already establish.
+
+**Files touched this session:** `HANDOFF.md` (full spec-mapping + 4 amendments + 4
+build riders recorded pre-code, then updated through the build), `config.py`/
+`.env.example` (`FRED_API_KEY`, optional), `bot/data/rates.py` (new —
+`PolicyRateCache`, `apply_effective_date_shift`, `rate_asof`), `scripts/
+fetch_policy_rates.py` (new — FRED fetcher; JPY series corrected mid-build from
+`IRSTCB01JPM156N`, empty, to `IRSTCI01JPM156N`), `calibration/rates/*.parquet` (new,
+TRACKED — the project's first non-OANDA pinned data, fetched from PA), `bot/
+strategies/carry.py` (new), `bot/config/instruments.yaml` (`carry_params` defaults +
+`carry_calibration` blocks, USD_JPY/GBP_JPY), `scripts/{run_validation_gates,
+diagnose_gates}.py` (carry registry entry + `compute_carry_expansion_diagnostic` +
+generalized `expansion_veto_pass_rate` + carry diagnostic blocks),
+`tests/{test_rates,test_carry}.py` (new — no-lookahead tests, structure tests both
+directions, EXPANSION-veto journaling test). Full test suite: 275 passed throughout.
