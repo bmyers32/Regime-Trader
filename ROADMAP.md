@@ -130,4 +130,4 @@ positions this window (never switched sign) — GBP_USD/AUD_USD (confirmed dynam
 5/3 sign flips respectively) are the lawful renewal candidates for actually testing a
 switching carry signal. 3 of 3 §6 hearings now spent (0 passes); only slot 3
 (failed-breakout re-entry) remains unrun.
-→ archive/POST-MORTEMS.md §7, commit TBD (this session).
+→ archive/POST-MORTEMS.md §7, commit 71524dd.
