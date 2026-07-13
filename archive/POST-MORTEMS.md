@@ -853,3 +853,41 @@ diagnose_gates}.py` (carry registry entry + `compute_carry_expansion_diagnostic`
 generalized `expansion_veto_pass_rate` + carry diagnostic blocks),
 `tests/{test_rates,test_carry}.py` (new — no-lookahead tests, structure tests both
 directions, EXPANSION-veto journaling test). Full test suite: 275 passed throughout.
+
+## §8 Standalone finding: classifier states not mapping to tradeable reality (cross-hearing pattern, recorded 2026-07-13)
+
+Not a closed disposition of its own — no ROADMAP.md pointer needed, unlike every
+`§N` section above. A pattern noticed across three separate, independently-run
+pieces of evidence, worth naming explicitly so future regime work inherits it rather
+than re-discovering it each time:
+
+1. **COMPRESSION→EXPANSION rarity / hysteresis-lag** (squeeze_breakout H1
+   post-mortem, §4 above): the HYSTERESIS-EXCLUDED FINDING showed ~52 hysteresis-
+   excluded evaluations vs. 53 fired (~98%, GBP_USD) — essentially every fired trade
+   had a counterpart bar just outside the confirmed-COMPRESSION window where the
+   same trigger would also have cleared threshold, had the regime gate's hysteresis
+   lag not excluded it. The classifier's COMPRESSION state was real but its
+   boundary didn't track where the tradeable setups actually were.
+2. **The squeeze routing null** (squeeze_breakout §2 consultation-window
+   experiment, §5 above): the eligible population for a COMPRESSION-adjacent
+   consultation window was vanishingly rare (16/8 bars) and signal-free — a regime
+   state (COMPRESSION, about to route to squeeze_breakout) that existed in the
+   classifier's own bookkeeping but corresponded to almost no real, tradeable
+   occurrences in the underlying price history.
+3. **This hearing's EXPANSION-during-hold null** (carry, §7 above): the EXPANSION
+   veto genuinely bound 21–38% of consulted entries — a real, non-decorative gate —
+   yet losses concentrated almost entirely OUTSIDE EXPANSION-confirmed holds (0/49
+   USD_JPY, 1/46 GBP_JPY). The regime state that exists to explain carry-crash
+   losses was active and firing, but wasn't where the actual losses were.
+
+**The pattern, stated once:** a classifier state can be real, well-calibrated by its
+own §1.7 pass-rate check, and genuinely binding on the gate that consults it — and
+still fail to line up with where the tradeable behavior the state is SUPPOSED to
+explain actually happens. Three independent instances now (different playbooks,
+different regime states, different mechanisms of discovery — a hysteresis-lag
+diagnostic, a consultation-window census, and a during-hold PnL split) is enough to
+treat this as a standing property of the classifier's relationship to tradeable
+reality, not a coincidence specific to any one playbook. **Future regime work
+(§2 threshold recalibration, a new regime state, or a new playbook that gates on
+one) should check for this pattern explicitly before trusting that a state's own
+pass-rate/binding-rate implies it explains the behavior it's assumed to explain.**

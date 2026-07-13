@@ -34,6 +34,20 @@ what the strategy saw. Turns "why did/didn't it trade" from CSV archaeology into
 glance (Chart.js on existing stack, snapshot JSON already captured). Needs Phases
 2+9; purely additive, no schema change.
 
+### FRED policy-rate pipeline (reusable macro-data infrastructure)
+DELIVERED 2026-07-13 (§6 slot 2, carry hearing, commit 71524dd):
+`bot/data/rates.py` (`PolicyRateCache`, `apply_effective_date_shift`, `rate_asof`) +
+`scripts/fetch_policy_rates.py` + `calibration/rates/` (tracked, not gitignored).
+Built for carry's own signal, but nothing about the pipeline is carry-specific: a
+currency-keyed (not instrument-keyed) rate cache, an as-of/no-lookahead convention
+for external macro series (daily-observed vs. monthly-proxy-with-publication-lag),
+and the tracked-calibration-data-survives-a-fresh-clone precedent are all reusable
+by any future strategy needing historical macro data (inflation prints, GDP,
+unemployment, or a better rate source) — not scaffolding scoped to this one hearing.
+Extending to a new series/currency needs only a new `_SERIES_BY_CURRENCY` entry (or
+a parallel fetcher for a non-FRED source) and a cache-directory choice; the
+lookup/no-lookahead machinery in `bot/data/rates.py` needs no changes.
+
 ### Walk-forward automation harness
 Gates 3/4/6 DELIVERED 2026-07-07 (commit f57a032):
 `bot/backtest/{param_sweep,walk_forward,stability,monte_carlo,gate_report}.py`,

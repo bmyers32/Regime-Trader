@@ -50,3 +50,4 @@ Full decompression stories: archive/BRAIN-CONTEXT.md, same order, §N per seed b
 12. **Decide which diagnostic wins before either diagnostic exists.** *Phase 7 close-out — squeeze_breakout's hysteresis-excluded vs. false-break findings.* → archive/BRAIN-CONTEXT.md §12
 13. **A diagnostic must count the population its remedy can reach.** *Phase 7 follow-up — squeeze_breakout's §2 consultation-window experiment.* → archive/BRAIN-CONTEXT.md §13
 14. **A tripped guardrail is a demand for evidence, not a verdict.** *Phase 7 follow-up — squeeze_breakout's pre-registered parity check.* → archive/BRAIN-CONTEXT.md §14
+15. **Profitable and provable are different claims.** *§6 slot 2 close-out — carry-with-regime-conditioning's gate-3-pass/gate-6-fail signature.* → archive/BRAIN-CONTEXT.md §15

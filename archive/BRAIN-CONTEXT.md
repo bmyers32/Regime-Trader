@@ -244,6 +244,35 @@ requests instead of cacheable ones, a retry policy judged against all failures
 instead of transient ones, an amended filter judged against everything the old
 filter excluded instead of the specific excluded subtype it was built for.
 
+## §15 Profitable and provable are different claims.
+*§6 slot 2 close-out — carry-with-regime-conditioning's gate-3-pass/gate-6-fail signature, 2026-07-13*
+Every prior FAIL in this project — trend_pullback, range_reversion, squeeze_breakout,
+momentum — had negative gross and/or net stitched-OOS PnL. The two claims a backtest
+makes, "this made money" and "this reliably makes money," collapsed into one failure
+every time, because a negative number answers both questions at once: no, it isn't
+profitable, so the provability question never had to be asked separately. Carry broke
+that collapse for the first time: gate 3 genuinely PASSED on both target pairs — a
+real, positive, non-trivial edge existed over the full stitched OOS record — and gate
+6's bootstrap still rejected both pairs, at nearly identical probabilities, because
+that positive number wasn't statistically distinguishable from what a noise process
+centered at or below zero would produce some of the time anyway. A single point
+estimate of profit, however real the arithmetic behind it, is silent on whether the
+process that produced it is reliable — that is a second, separate claim, and it needs
+its own test. The multi-gate structure exists precisely so a system doesn't have to
+take gate 3's word for it; this hearing is the first time gate 6 was actually the one
+doing the convicting, on a genuinely positive number, rather than rubber-stamping an
+already-negative verdict.
+Ignoring it → specific failure: shipping a strategy — or accepting any result — on
+the strength of a single positive point estimate, when the estimate's own
+distribution was wide enough that "positive" and "noise" were not actually
+distinguishable; the backtest would have looked identical whether or not a real edge
+existed.
+Applies anywhere a positive headline number can coexist with a wide confidence
+interval: an A/B test with positive lift but a confidence interval crossing zero, a
+model eval with a good mean score but high variance across seeds, any metric reported
+as a single value when the honest claim requires reporting the distribution it came
+from.
+
 ## §14 A tripped guardrail is a demand for evidence, not a verdict.
 *Phase 7 follow-up — squeeze_breakout's pre-registered parity check, 2026-07-11*
 The pre-registered rule (admitted population must be >=50% of the diagnostic's
