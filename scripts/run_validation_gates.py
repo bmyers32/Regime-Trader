@@ -68,6 +68,7 @@ from bot.data.cache import CandleCache
 from bot.indicators.core import atr as _atr
 from bot.indicators.core import bollinger_bands as _bollinger_bands
 from bot.regime.classifier import RegimeClassifier, RegimeState
+from bot.strategies.carry import Carry
 from bot.strategies.momentum import Momentum
 from bot.strategies.range_reversion import RangeReversion
 from bot.strategies.squeeze_breakout import SqueezeBreakout
@@ -251,6 +252,47 @@ def _describe_momentum_params(params: dict) -> str:
     return f"n={params['n']} sl_atr_mult={params['sl_atr_mult']}"
 
 
+# ---------------------------------------------------------------------------
+# carry param grid (TRADING-RULES §6, 2026-07-12/13 hearing, slot 2 -- new)
+# ---------------------------------------------------------------------------
+
+# ZERO free signal parameters this hearing (spec C.1, HANDOFF.md): the differential's
+# SIGN is the signal, with no minimum-differential threshold in the search -- both
+# target pairs' real FRED differentials sit at 2.6-5.3 percentage points the whole
+# window (HANDOFF.md sign-stability exhibit), so a small pre-declared floor would be
+# structurally inert. Only exit/stability parameters remain, same shape gate 4 already
+# covers for every other playbook -- GATE 4 SCOPE CAVEAT (binding on the report): this
+# means gate 4 here measures exit-parameter stability ONLY, not signal robustness the
+# way it did for momentum (where "n" -- the signal itself -- was in the sweep).
+_CARRY_STABILITY_KEYS = [
+    "sl_atr_mult",
+    "exit.trail_atr_mult",
+    "exit.partial_at_r",
+]
+_CARRY_SIMPLEX_GROUPS: list[list[str]] = []  # no score_weights -- signal-only, §1.1 exemption
+
+
+def _build_param_grid_carry(base_params: dict) -> list[dict]:
+    """A single-candidate grid (the yaml defaults, unchanged) -- there is no signal
+    parameter for walk-forward's per-window IS selection to search over, so unlike
+    every other strategy's grid this one never varies. Kept as a real grid (not a
+    bypass of the walk-forward machinery) so gates 3/4/6 run through the exact same
+    code path every other playbook uses."""
+    return [copy.deepcopy(base_params)]
+
+
+def _carry_params_key(params: dict) -> tuple:
+    """Trivial grouping key -- the grid has exactly one candidate (see above), so
+    every window's chosen_params is identical by construction. Exists only to satisfy
+    most_common_params' key_fn contract, same registry surface momentum's own
+    params_key_fn slot uses."""
+    return (params["sl_atr_mult"],)
+
+
+def _describe_carry_params(params: dict) -> str:
+    return f"sl_atr_mult={params['sl_atr_mult']} (no signal parameter -- see module docstring)"
+
+
 def classify_threshold_regime(weights: dict, threshold: float) -> str:
     """HANDOFF.md disposition 1: classify a binary-2-component (threshold, weights)
     choice into the discrete effective regime it produces. Only meaningful for
@@ -383,6 +425,23 @@ _STRATEGIES: dict[str, _StrategySpec] = {
         oos_bars=250,
         params_key_fn=_momentum_params_key,
         describe_params=_describe_momentum_params,
+    ),
+    "carry": _StrategySpec(
+        name="carry",
+        strategy_class=Carry,
+        params_key="carry_params",
+        stability_keys=_CARRY_STABILITY_KEYS,
+        simplex_groups=_CARRY_SIMPLEX_GROUPS,
+        build_param_grid=_build_param_grid_carry,
+        # D:H4 = 6:1, the SAME anchor:execution TF pair and window sizing momentum's
+        # hearing already stood up -- reused directly, not re-derived (TRADING-RULES
+        # §6, 2026-07-12/13, slot 2 spec-mapping (3)/(5)).
+        htf_gran="D",
+        ltf_gran="H4",
+        is_bars=750,
+        oos_bars=250,
+        params_key_fn=_carry_params_key,
+        describe_params=_describe_carry_params,
     ),
 }
 
@@ -745,6 +804,54 @@ def compute_momentum_signflip_diagnostic(windows: list[WalkForwardWindow], htf_d
     }
 
 
+def compute_carry_expansion_diagnostic(
+    windows: list[WalkForwardWindow], htf_df: pd.DataFrame, regime_params: dict
+) -> dict:
+    """
+    TRADING-RULES §6 (2026-07-13, carry hearing, spec-mapping C.2 rider 1): split
+    LOSING stitched OOS trades by whether the D-anchor regime was EVER classified
+    EXPANSION at any point between trade open and close -- even though this
+    strategy's own EXPANSION veto only blocks NEW entries (spec C.2), never forces a
+    mid-hold flatten. If losses concentrate in the expansion_during_hold bucket, that
+    scopes any FAIL verdict to "under entries-only conditioning" and NAMES mid-hold
+    forced flatten as the concrete revival mechanism a future attempt would target --
+    not built this hearing, same "diagnostic pre-registered to hand a future revival a
+    target" discipline momentum's own A3/A7 used above.
+
+    The D-anchor regime timeline is classified ONCE over the full history (doesn't
+    depend on strategy params, only which trades are OOS does) -- same construction
+    compute_hysteresis_excluded uses for squeeze_breakout.
+    """
+    classifier = RegimeClassifier(regime_params)
+    classifier.reset()
+    htf_regimes = [classifier.classify(htf_df.iloc[: i + 1]).regime for i in range(len(htf_df))]
+    htf_times = htf_df["time"].to_numpy()
+
+    expansion_during_hold: list = []
+    no_expansion_during_hold: list = []
+
+    for w in windows:
+        for t in w.oos.trades:
+            if t.pnl >= 0:
+                continue  # only losing trades are split (rider 1's own scope)
+
+            entry_pos = max(0, int(htf_times.searchsorted(t.entry_ts, side="right")) - 1)
+            exit_pos = max(entry_pos, int(htf_times.searchsorted(t.exit_ts, side="right")) - 1)
+            regimes_during_hold = htf_regimes[entry_pos : exit_pos + 1]
+
+            if RegimeState.EXPANSION in regimes_during_hold:
+                expansion_during_hold.append(t)
+            else:
+                no_expansion_during_hold.append(t)
+
+    return {
+        "expansion_during_hold_count": len(expansion_during_hold),
+        "expansion_during_hold_pnl": sum(t.pnl for t in expansion_during_hold),
+        "no_expansion_during_hold_count": len(no_expansion_during_hold),
+        "no_expansion_during_hold_pnl": sum(t.pnl for t in no_expansion_during_hold),
+    }
+
+
 if __name__ == "__main__":
     instrument_arg = sys.argv[1] if len(sys.argv) > 1 else "EUR_USD"
     strategy_arg = sys.argv[2] if len(sys.argv) > 2 else "trend_pullback"
@@ -856,4 +963,45 @@ if __name__ == "__main__":
         print(
             f"  excluded: insufficient_history={diag['excluded_insufficient_history']} "
             f"exact_zero_at_exit={diag['excluded_exact_zero_at_exit']}"
+        )
+
+    if strategy_arg == "carry":
+        # Gate 4 scope caveat (HANDOFF.md rider 3, binding on the report): carry has
+        # zero free signal parameters this hearing (see _build_param_grid_carry) --
+        # gate 4 above measured exit-parameter stability ONLY, not signal robustness
+        # the way it did for momentum's "n". Flag plainly, don't let a clean PASS be
+        # misread as "the signal is robust".
+        print()
+        print(
+            "GATE 4 SCOPE CAVEAT: carry has no signal parameter to sweep (the "
+            "differential's sign is fixed, not searched -- see HANDOFF.md's C.1 "
+            "threshold-search decision). The stability result above covers "
+            "sl_atr_mult/trail exit parameters only. A clean PASS here says the EXIT "
+            "mechanics are robust; it says nothing about the carry signal itself, "
+            "unlike momentum's gate 4 which independently caught 'n' as fragile."
+        )
+
+        # A5(a)-equivalent funnel-framing note, same shape momentum's own note gives.
+        print()
+        print(
+            "Funnel-framing note: carry is signal-only (TRADING-RULES §1.1 exemption) "
+            "-- expect consulted~=fired with near-misses~=0 in "
+            "scripts/diagnose_gates.py's funnel exhibit, except for the EXPANSION-"
+            "vetoed subset (see that script's own EXPANSION-veto pass-rate exhibit)."
+        )
+
+        # HANDOFF.md C.2 rider 1: pre-registered EXPANSION-during-hold diagnostic.
+        diag = compute_carry_expansion_diagnostic(wf.windows, result["htf_df"], result["regime_params"])
+        print()
+        print("EXPANSION-during-hold diagnostic (losing stitched OOS trades only):")
+        print(
+            f"  expansion_during_hold:    count={diag['expansion_during_hold_count']:4d} "
+            f"pnl={diag['expansion_during_hold_pnl']:10.2f}  "
+            "(concentration here scopes a FAIL to 'under entries-only conditioning' and "
+            "names mid-hold forced flatten as the revival mechanism)"
+        )
+        print(
+            f"  no_expansion_during_hold: count={diag['no_expansion_during_hold_count']:4d} "
+            f"pnl={diag['no_expansion_during_hold_pnl']:10.2f}  "
+            "(implicates the thesis itself, not the regime gate's own scope)"
         )

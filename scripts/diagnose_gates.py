@@ -238,16 +238,20 @@ def compute_funnel_per_record_threshold(signals) -> dict:
     }
 
 
-def expansion_veto_pass_rate(signals) -> dict:
+def expansion_veto_pass_rate(signals, veto_name: str = "expansion_atr_spike") -> dict:
     """
-    HANDOFF.md disposition 4 (range_reversion only): fire-rate of the
-    'expansion_atr_spike' veto specifically, among all consulted (RANGING-routed)
-    bars. <1% or >95% means this pair's LTF-reused expansion thresholds need their
-    own recalibration before this pair's gates are trusted (TRADING-RULES §1.7,
-    the v3 bb_width<0.05 always-true-filter failure mode).
+    HANDOFF.md disposition 4 (range_reversion, veto_name="expansion_atr_spike") /
+    carry hearing C.2 rider 3 (2026-07-13, veto_name="expansion_regime"): fire-rate
+    of the named veto among all consulted evaluations. <1% or >95% means the veto is
+    either never binding (decorative) or almost always binding (degenerate) --
+    TRADING-RULES §1.7's pass-rate law, the v3 bb_width<0.05 always-true-filter
+    failure mode, generalized past its original range_reversion-only caller via a
+    parameter (same "generalize via a function argument, default preserves every
+    existing call site" move classify_threshold_regime_general made for
+    classify_threshold_regime).
     """
     total = len(signals)
-    fired = sum(1 for s in signals if "expansion_atr_spike" in s.vetoes)
+    fired = sum(1 for s in signals if veto_name in s.vetoes)
     rate = fired / total if total else 0.0
     flagged = total > 0 and (rate < 0.01 or rate > 0.95)
     return {"total": total, "fired": fired, "rate": rate, "flagged": flagged}
@@ -336,6 +340,18 @@ def run_diagnostics(instrument: str, strategy_name: str = "trend_pullback") -> N
         flag_str = "FLAGGED -- recalibrate before trusting this pair's gates" if ev["flagged"] else "OK (within 1%-95%)"
         print(f"  fired={ev['fired']}/{ev['total']} rate={ev['rate']:.1%} -- {flag_str}")
 
+    if strategy_name == "carry":
+        print(f"[{instrument}/{strategy_name}] DIAGNOSTIC 4 -- EXPANSION-veto fire-rate (HANDOFF.md C.2 rider 3, §1.7 pass-rate, BINDING)")
+        ev = expansion_veto_pass_rate(signals, veto_name="expansion_regime")
+        flag_str = (
+            "FLAGGED -- near-zero/near-total rate means this hearing's own centerpiece "
+            "regime-conditioning was decorative for this pair; the verdict write-up must "
+            "say so plainly, not just report the number"
+            if ev["flagged"]
+            else "OK (within 1%-95%) -- the EXPANSION gate is genuinely binding some of the time"
+        )
+        print(f"  fired={ev['fired']}/{ev['total']} rate={ev['rate']:.1%} -- {flag_str}")
+
     scores = sorted(s.score for s in signals)
     if scores:
         import statistics
@@ -411,6 +427,46 @@ def run_diagnostics(instrument: str, strategy_name: str = "trend_pullback") -> N
             "errors back toward the correct weekly total -- the approximation's error "
             "SHRINKS as a fraction of total rollover cost the longer a hold runs. Multi-week "
             "momentum holds are the case this approximation converges best on, not worst."
+        )
+
+    if strategy_name == "carry":
+        raw = _load_raw_config()
+        account_currency = raw.get("account_currency", "USD")
+        cost_model = raw["instruments"][instrument]["cost_model"]
+        cache2 = CandleCache(_CACHE_DIR)
+        conversion_series = rvg.load_conversion_series(instrument, account_currency, cache2, "H4")
+
+        # HANDOFF.md pre-registration 5: duty-cycle + rollover-share are PRIMARY for
+        # this thesis, not context (financing IS the thesis, not just a cost line --
+        # see carry.py's module docstring, spec C.6). Reuses the exact same function
+        # momentum's hearing built -- it was never momentum-specific in implementation,
+        # only in name (multi-week-hold rollover accounting is identical math either
+        # way).
+        print(f"[{instrument}/{strategy_name}] A5(d)-equivalent duty cycle + rollover cost share (PRIMARY exhibit for this thesis, C.6)")
+        dc = momentum_duty_cycle_and_rollover_share(trades, instrument, cost_model, account_currency, conversion_series)
+        import gross_vs_net  # noqa: E402 -- sibling script, same sys.path.insert pattern as rvg above
+
+        gross, gross_count = gross_vs_net.gross_stitched_pnl(instrument, strategy_name, window_chosen_params)
+        net = sum(t.pnl for t in trades)
+        total_cost = gross - net
+        rollover_cost_magnitude = -dc["total_rollover_cost"]
+        rollover_share = (rollover_cost_magnitude / total_cost) if total_cost != 0 else float("nan")
+        print(
+            f"  duty_cycle={dc['duty_cycle']:.1%} (held {dc['held_seconds']/86400:.1f}d of "
+            f"{dc['span_seconds']/86400:.1f}d stitched OOS span)"
+        )
+        print(
+            f"  gross={gross:.2f} ({gross_count} trades) net={net:.2f} total_cost={total_cost:.2f} "
+            f"rollover_cost={dc['total_rollover_cost']:.2f} rollover_share_of_total_cost={rollover_share:.1%}"
+        )
+        print(
+            "  C.6 divergence-direction note (HANDOFF.md, binding): the engine's rollover "
+            "cost above uses a CONSTANT present-day OANDA snapshot, not this strategy's own "
+            "time-varying historical FRED signal. Both target pairs' real differentials "
+            "NARROWED over the window (Fed cut, BOJ hiked) -- the constant snapshot "
+            "under-credits early-window trades relative to true history, i.e. this cost "
+            "model is CONSERVATIVE for this thesis, not generous. A PASS survives this "
+            "bias; a FAIL cannot be attributed to an unfairly generous rollover assumption."
         )
 
     print(f"[{instrument}/{strategy_name}] DONE\n", flush=True)
