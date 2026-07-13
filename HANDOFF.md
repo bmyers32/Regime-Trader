@@ -67,40 +67,53 @@ re-running it is a deliberate, committed act, not an automatic refresh. `FRED_AP
 goes in `.env`/`.env.example`/`config.py`, same pattern every existing secret uses.
 
 ### Amendment 4 — sign-stability exhibit required before finalizing pairs/spec
-Done below (research-derived first pass); a real-data recompute + HALT-check against it
-is a required build step (see "Not done / next action" below) BEFORE any strategy code
-is written.
+DONE — see below. Research-derived first pass, then recomputed from the real pinned
+FRED snapshot (2026-07-13); no sign or classification disagreement found, so the
+HALT condition was not triggered and the build proceeded to strategy code.
 
-## Sign-stability exhibit (PROVISIONAL — research-derived, not yet FRED-API-derived)
+## Sign-stability exhibit — CONFIRMED FROM REAL DATA (no HALT triggered)
 
-**Not the hearing's evidence of record.** Built from WebSearch summaries of real
-central-bank decision coverage (Fed, ECB, BoE, BOJ, RBA), 2024-2026, current as of
-2026-07-12 — a reasonable basis to decide which pairs are worth targeting, not a
-substitute for the real pinned dataset. **Must be recomputed from the real fetched
-`calibration/rates/` snapshot before any strategy code is built or any gate runs; any
-disagreement on sign or static/dynamic classification for any pair HALTS for review.**
-Pre-framed exception, NOT a halt trigger: amendment 1's monthly-proxy convention will
-shift JPY/AUD's exact checkpoint values by up to ~a month vs. this table's
-announcement-dated numbers — expected, not a discrepancy.
+Recomputed 2026-07-13 from the real pinned `calibration/rates/` snapshot (fetched from
+PA 2026-07-13T02:52:50Z) via `bot.data.rates.rate_asof` over a daily grid spanning the
+full fetched window (2024-01-13 to 2026-07-10) for all six configured pairs. **Result:
+no disagreement in sign or static/dynamic classification vs. the research-derived table
+below for any pair — the amendment-4 HALT condition was not triggered**, so the build
+proceeds. One detail correction, not a classification disagreement: AUD_USD flips sign
+3 times in the real data (2024-12-19, 2025-03-01, 2026-03-01), not the "crosses once"
+simplification the research pass estimated — still DYNAMIC either way, so this doesn't
+change any downstream decision.
+
+| Pair | Real differential (base − quote), min/max/first/last | Sign flips | Verdict |
+|---|---|---|---|
+| **USD_JPY** | min=2.893 max=5.344, first=5.344→last=2.893 | 0 | STATIC POSITIVE |
+| **GBP_JPY** | min=2.997 max=5.203, first=5.202→last=3.003 | 0 | STATIC POSITIVE |
+| EUR_USD | min=−2.330 max=−1.330, first=−1.330→last=−1.370 | 0 | STATIC NEGATIVE |
+| EUR_GBP | min=−2.218 max=−1.187, first=−1.187→last=−1.480 | 0 | STATIC NEGATIVE |
+| GBP_USD | min=−0.380 max=0.375, first=−0.143→last=0.110 | 5 (2024-09-19, 2024-11-07, 2024-11-08, 2025-05-08, 2025-10-30) | DYNAMIC |
+| AUD_USD | min=−0.980 max=0.690, first=−0.980→last=0.690 | 3 (2024-12-19, 2025-03-01, 2026-03-01) | DYNAMIC |
+
+<details><summary>Research-derived table (provisional first pass, superseded above — kept for the record)</summary>
 
 | Pair | Differential (base − quote) sign across 2024-2026 | Verdict |
 |---|---|---|
-| **USD_JPY** | +5.3% (mid-2024) → +2.6% (now) — never crosses zero | STATIC POSITIVE |
-| **GBP_JPY** | +5.15% (mid-2024) → +2.75% (now) — never crosses zero | STATIC POSITIVE |
+| USD_JPY | +5.3% (mid-2024) → +2.6% (now) — never crosses zero | STATIC POSITIVE |
+| GBP_JPY | +5.15% (mid-2024) → +2.75% (now) — never crosses zero | STATIC POSITIVE |
 | EUR_USD | −1.4% to −2.4%, always negative | STATIC NEGATIVE |
 | EUR_GBP | −1.25% to −2.25%, always negative | STATIC NEGATIVE |
 | GBP_USD | −0.13%→+0.13%→−0.38%→+0.13% (mid-2024→now) | DYNAMIC — flips repeatedly |
 | AUD_USD | −1.0%→≈0%→+0.73% (mid-2024→now, RBA's 2026 hiking reversal) | DYNAMIC — crosses once |
 
-(Rate paths: Fed 5.375%→4.375%→3.625%; ECB 4.0%→3.0%→2.0%→2.25%; BoE
-5.25%→4.50%→3.75%; BOJ 0%→0.25%→0.5%→0.75%→1.0%; RBA 4.35%→4.10%→3.60%→4.35%.)
+(Rate paths behind the research pass: Fed 5.375%→4.375%→3.625%; ECB
+4.0%→3.0%→2.0%→2.25%; BoE 5.25%→4.50%→3.75%; BOJ 0%→0.25%→0.5%→0.75%→1.0%; RBA
+4.35%→4.10%→3.60%→4.35%.)
+</details>
 
-Confirms the pairs decision's premise: USD_JPY/GBP_JPY are both static-sign for this
-whole window — this hearing, as scoped, tests a **regime-conditioned static short-JPY
-position**, not a dynamically-switching signal. AUD_USD (single crossover) and GBP_USD
-(multiple flips — the most dynamic pair in the whole config, new information beyond
-what was anticipated) are the pairs that would actually exercise signal *dynamics* —
-both recorded as lawful §6-renewal candidates, not run this hearing.
+Confirms the pairs decision's premise, now on real data: USD_JPY/GBP_JPY are both
+static-sign for this whole window — this hearing, as scoped, tests a
+**regime-conditioned static short-JPY position**, not a dynamically-switching signal.
+AUD_USD (3 flips) and GBP_USD (5 flips — the most dynamic pair in the whole config) are
+the pairs that would actually exercise signal *dynamics* — both recorded as lawful
+§6-renewal candidates, not run this hearing.
 
 ## Spec-mapping (6 items, all resolved)
 
@@ -183,18 +196,18 @@ artifact** — if anything the model understates this thesis's own tailwind.
    attribution, duty-cycle + rollover-share (primary for this thesis, not just context).
 
 ## Not done / next action
-Build not started. In order: (1) `bot/data/rates.py` (`PolicyRateCache` +
-`rate_asof(currency, date)` via `merge_asof(direction='backward')`, same idiom
-`trend_pullback.py` uses for its own HTF-alignment merge) + `scripts/fetch_policy_rates.py`
-(FRED fetcher, sibling to `fetch_financing_rates.py`/`fetch_history.py`) +
-`FRED_API_KEY` in `config.py`/`.env.example`. (2) Run the fetcher, pin output to
-`calibration/rates/` (committed). (3) **Recompute the sign-stability table above from
-the real pinned data — HALT for review on any sign or static/dynamic disagreement**
-(an M+1 date shift on JPY/AUD checkpoints is expected, not a halt). (4) Build
-`bot/strategies/carry.py` (mirrors `momentum.py`'s shape) + `carry_params`/
-`carry_calibration` in `instruments.yaml`. (5) `tests/test_rates.py`,
-`tests/test_carry.py` — no-lookahead test, structure tests both directions,
-EXPANSION-veto journaling test. (6) Register `carry` in
+Steps 1-3 DONE this session: (1) `bot/data/rates.py` (`PolicyRateCache` +
+`rate_asof()` via `merge_asof(direction='backward')`) + `scripts/fetch_policy_rates.py`
+(FRED fetcher; JPY series corrected mid-build from `IRSTCB01JPM156N` (empty) to
+`IRSTCI01JPM156N`) + `FRED_API_KEY` in `config.py` (optional)/`.env.example` — commits
+`4dfef06`, `bd957f7`. (2) Fetched from PA (local run hit the anticipated TLS
+interception), pinned to `calibration/rates/`, committed — commit `19b1630`. (3)
+Sign-stability table recomputed from real data, no HALT triggered (see above).
+
+Remaining, in order: (4) Build `bot/strategies/carry.py` (mirrors `momentum.py`'s
+shape) + `carry_params`/`carry_calibration` in `instruments.yaml`. (5)
+`tests/test_rates.py`, `tests/test_carry.py` — no-lookahead test, structure tests both
+directions, EXPANSION-veto journaling test. (6) Register `carry` in
 `scripts/{run_validation_gates,diagnose_gates,gross_vs_net}.py` (reuse momentum's D/H4
 TF-pair generalization); add the EXPANSION-during-hold diagnostic + veto-rate exhibit.
 (7) Run TRADING-RULES §5 gates 3/4/6 on USD_JPY and GBP_JPY, render every
