@@ -193,6 +193,44 @@ defaults:
       trail_atr_period: 22    # standard Chandelier Exit ATR period — same as trend_pullback/squeeze_breakout
       trail_atr_mult: 3.0     # standard Chandelier Exit multiplier — same as trend_pullback/squeeze_breakout
 
+  # carry strategy params (TRADING-RULES §6, 2026-07-12 hearing spec resolved, built
+  # 2026-07-13, slot 2 of the pivot-cycle budget, bot/strategies/carry.py). Signal-only
+  # per §1.1's EXEMPTION (same as momentum): sign of the policy-rate differential
+  # (rate[base]-rate[quote], real historical FRED/proxy history pinned to
+  # calibration/rates/), nothing else. entry_threshold below is fixed at 1.0, same
+  # shared run_fn-plumbing convention momentum_params uses (not a tunable dial). NO
+  # minimum-differential threshold in the IS-search grid, unlike momentum's own N grid
+  # -- HANDOFF.md's sign-stability exhibit (real data) shows both target pairs'
+  # differentials sit at 2.6-5.3 percentage points the whole window, so a small
+  # pre-declared floor would be structurally inert; this strategy therefore has ZERO
+  # free signal parameters this hearing, only the same execution parameters
+  # (sl_atr_mult, trail) every playbook already walk-forward-searches. GATE 4 SCOPE
+  # CAVEAT (binding on the eventual report, HANDOFF.md rider 3): because no signal
+  # parameter exists to sweep, gate 4 here measures exit-parameter stability ONLY -- a
+  # PASS must not be read as "the carry signal is robust" the way it was for momentum.
+  #
+  # Exit: SAME partial-at-1R + ATR/Chandelier trail exit_cfg mechanism every other
+  # playbook uses (own numbers below) -- same reasoning momentum_params gives: the
+  # engine only calls generate_signal() when flat, so no signal-flip/time-based exit
+  # exists without new engine surface, and slot 1's A3/A7 diagnostic already found a
+  # null result on signal-flip exit as a revival mechanism (directly inherited here,
+  # see carry.py's module docstring).
+  #
+  # PROVISIONAL (2026-07-13): implements the §6 hearing's spec-mapping with reasonable
+  # defaults. NOT yet empirically validated -- sl_atr_mult/trail params need TRADING-
+  # RULES §5 gates 3-4 once real gates run. sl_atr_mult=2.0 matches momentum_params'
+  # own widening vs. the H1-execution playbooks' 1.5/1.75 -- carry is also a multi-week-
+  # hold thesis executing on H4, same rationale.
+  carry_params:
+    sl_atr_mult: 2.0          # same multi-week-hold widening rationale as momentum_params
+    entry_threshold: 1.0      # FIXED, not tunable -- §1.1 exemption, shared run_fn plumbing only
+    exit:
+      partial_fraction: 0.5   # fraction of units closed at partial_at_r
+      partial_at_r: 1.0       # R-multiple (of the ATR-mult stop distance) that triggers the partial
+      breakeven_after_partial: false  # must earn its way in via walk-forward, never a silent default
+      trail_atr_period: 22    # standard Chandelier Exit ATR period -- same as every other playbook
+      trail_atr_mult: 3.0     # standard Chandelier Exit multiplier -- same as every other playbook
+
   # Cost model (Phase 4, bot/backtest/costs.py + sizing.py). No shared defaults here —
   # per TRADING-RULES §1.7 every threshold ships with a calibration note, and spread/
   # rollover are pair-specific by nature (GBP/JPY spreads nothing like EUR/USD). Each
@@ -301,6 +339,17 @@ instruments:
         EUR_USD on signal-flip exit as a revival mechanism. See
         archive/POST-MORTEMS.md §6 for the full writeup. Not ship-ready;
         do not enable.
+    carry_calibration:
+      calibration_note: >
+        Uses defaults.carry_params — no per-pair override. NOT YET TESTED
+        (2026-07-13): TRADING-RULES §6 slot 2 spec-mapping resolved and
+        recorded in HANDOFF.md, real FRED policy-rate snapshot fetched and
+        pinned (calibration/rates/), sign-stability exhibit confirms this
+        pair's differential is STATIC POSITIVE the whole 2024-2026 window
+        (GBP>JPY throughout, min=2.997 max=5.203 percentage points, 0 sign
+        flips) — a regime-conditioned static short-JPY position, not a
+        dynamically-switching signal. §5 gates 3/4/6 not yet run. Update
+        this note once they are.
     cost_model:
       spread_pips:
         asian: 3.9
@@ -607,6 +656,17 @@ instruments:
         +340.09; do not treat as evidence of a real pre-cost edge. See
         ROADMAP.md's "squeeze_breakout H1 post-mortem" for the full writeup.
         Not ship-ready; do not enable.
+    carry_calibration:
+      calibration_note: >
+        Uses defaults.carry_params — no per-pair override. NOT YET TESTED
+        (2026-07-13): TRADING-RULES §6 slot 2 spec-mapping resolved and
+        recorded in HANDOFF.md, real FRED policy-rate snapshot fetched and
+        pinned (calibration/rates/), sign-stability exhibit confirms this
+        pair's differential is STATIC POSITIVE the whole 2024-2026 window
+        (USD>JPY throughout, min=2.893 max=5.344 percentage points, 0 sign
+        flips) — a regime-conditioned static short-JPY position, not a
+        dynamically-switching signal. §5 gates 3/4/6 not yet run. Update
+        this note once they are.
     cost_model:
       spread_pips:
         asian: 1.6

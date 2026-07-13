@@ -100,8 +100,14 @@ def rate_asof(rate_df: pd.DataFrame, as_of_dates: pd.Series) -> pd.Series:
     no-lookahead-safe idiom scripts/run_validation_gates.py already uses to broadcast
     the HTF regime timeline onto LTF bars. Returns a Series aligned to as_of_dates'
     original index; NaN for any date earlier than the rate series' first effective date.
+
+    merge_asof requires identical datetime64 resolution on both join keys -- candle
+    caches (nanosecond, from OANDA's own timestamps) and rate caches (microsecond,
+    after a parquet/pyarrow round-trip under pandas 3.x) don't naturally match, so the
+    lookup side is cast to the rate side's resolution before merging.
     """
-    lookup = pd.DataFrame({"date": as_of_dates.reset_index(drop=True), "_orig_pos": range(len(as_of_dates))})
+    lookup_dates = as_of_dates.reset_index(drop=True).astype(rate_df["date"].dtype)
+    lookup = pd.DataFrame({"date": lookup_dates, "_orig_pos": range(len(as_of_dates))})
     merged = pd.merge_asof(
         lookup.sort_values("date"),
         rate_df[["date", "rate"]].sort_values("date"),
