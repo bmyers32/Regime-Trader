@@ -23,7 +23,7 @@ source. `requests` is already pinned — no new dependency.
 | USD | `DFF` | Daily | Effective Fed Funds Rate — true daily policy-adjacent rate |
 | EUR | `ECBDFR` | Daily | ECB Deposit Facility Rate — true daily official policy rate |
 | GBP | `IUDSOIA` | Daily | SONIA — proxy; FRED carries no continuously-updated official Bank Rate series |
-| JPY | `IRSTCB01JPM156N` | Monthly | OECD-sourced "Central Bank Rates: Total for Japan" — proxy |
+| JPY | `IRSTCI01JPM156N` | Monthly | OECD-sourced Call Money/Interbank Rate for Japan — proxy (corrected during build: `IRSTCB01JPM156N`, the OECD "Central Bank Rate" code, returned zero live observations despite an active-looking series page; switched to the same `IRSTCI01` interbank-rate family AUD already uses) |
 | AUD | `IRSTCI01AUM156N` | Monthly | OECD-sourced interbank/call-money rate — proxy for RBA cash rate |
 
 Verified via WebSearch (FRED's own docs + series pages) that all five series exist and

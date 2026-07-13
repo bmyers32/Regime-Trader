@@ -49,7 +49,11 @@ _SERIES_BY_CURRENCY = {
     "USD": "DFF",                # Effective Fed Funds Rate, daily
     "EUR": "ECBDFR",              # ECB Deposit Facility Rate, daily
     "GBP": "IUDSOIA",             # SONIA, daily (proxy -- FRED has no live official Bank Rate series)
-    "JPY": "IRSTCB01JPM156N",     # OECD Central Bank Rate for Japan, monthly (proxy)
+    # IRSTCB01JPM156N (OECD "Central Bank Rate" for Japan) returned zero observations
+    # from the live API despite an active-looking series page -- appears to have
+    # stopped being populated. IRSTCI01JPM156N (Call Money/Interbank Rate), the same
+    # OECD series family AUD below uses, returns real data and is used instead.
+    "JPY": "IRSTCI01JPM156N",     # OECD interbank/call-money rate for Japan, monthly (proxy)
     "AUD": "IRSTCI01AUM156N",     # OECD interbank/call-money rate for Australia, monthly (proxy)
 }
 
