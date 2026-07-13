@@ -23,6 +23,15 @@ if OANDA_ENVIRONMENT != "practice":
         "until the Phase 11 live gate is explicitly passed."
     )
 
+# --- External data (TRADING-RULES §6 slot 2, carry hearing) ---
+# Historical policy-rate signal source, scripts/fetch_policy_rates.py -- the project's
+# first non-OANDA data dependency. Free key: fredaccount.stlouisfed.org/apikeys.
+# Optional (unlike OANDA/DB/dashboard secrets above): only scripts/fetch_policy_rates.py
+# needs it, not the bot/dashboard/test suite -- hard-requiring it here would break every
+# unrelated import of this module for anyone who hasn't fetched rates yet. That script
+# validates its own presence and fails loudly there instead.
+FRED_API_KEY: str | None = os.environ.get("FRED_API_KEY")
+
 # --- Database ---
 DATABASE_URL: str = os.environ["DATABASE_URL"]
 
